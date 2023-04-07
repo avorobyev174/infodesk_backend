@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="af410df8-b495-426d-a9f6-fdfc226fc34f" name="infodesk-backend" url="http://infodeskdev.m-e-c.ru">
+        <fileTransfer rootFolder="/home/user/infodesk/infodesk-backend" accessType="SFTP" host="172.27.15.31" port="22" sshConfigId="21fb6164-03d7-451d-895f-d152a484a96a" sshConfig="user@172.27.15.31:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
