@@ -12,57 +12,56 @@ module.exports = class LoginApi {
             const password = apiReq.body.password
     
             showRequestInfoAndTime(`Получен запрос на авторизацию ${ name } ${ password }`)
-           
+            const client = await pgPool.connect()
             try {
-                const client = await pgPool.connect()
                 console.log('pool connect')
                 const accounts = await client.query(`select * from accounts`)
-                console.log(accounts.rows)
-                console.log(accounts.rows.length)
-                if (!(accounts && accounts.rows)) {
+                if (!accounts.rows) {
                     return apiRes.status(400).send(`Что то пошло не так при авторизации`)
                 }
-                
+                let isAuth = false
                 for (const account of accounts.rows) {
                     if (account.name === name) {
                         if (account.password === password) {
-                            console.log(`Авторизация прошла успешно, пользователь: ${name}, пароль ${password}`)
+                            console.log(`Авторизация прошла успешно, пользователь: ${ name }, пароль ${ password }`)
+                            isAuth = true
+                            
+                            const authToken = jwt.sign(
+                                { id: account.id, name: account.name },
+                                        authKey,
+                                { expiresIn: tokenExp })
     
-                            const authToken = jwt.sign({ id: account.id, name: account.name }, authKey,
-                                                       { expiresIn: tokenExp })
-    
-                            const userCookies = await client.query(
-                                                            `select * from account_cookies where acc_id = ${ account.id }`)
-                            const moduleAccess = await client.query(
-                                                            `select access_modules, staff_id, roles
-                                                            from account_module_access where acc_id = ${ account.id }`)
-                        
-                            client.release()
+                            const userCookies = await client.query(`select * from account_cookies where acc_id = ${ account.id }`)
+                            const moduleAccess = await client.query(`select access_modules, staff_id, roles
+                                                                        from account_module_access where acc_id = ${ account.id }`)
+                                
                             return apiRes.status(200).send({
                                 authToken,
                                 roleToken: getRoleToken(moduleAccess),
                                 cookies: getCookies(userCookies)
                             })
                         } else {
-                            client.release()
                             console.log(`Авторизация прошла не успешно для пользователя ${ name }, не верный пароль`)
-                            return apiRes.status(400).send(`Авторизация прошла не успешно, не верный пароль`)
+                            apiRes.status(400).send(`Авторизация прошла не успешно, не верный пароль`)
                         }
                     }
                 }
-            
-                client.release()
-                console.log(`Авторизация прошла не успешно, пользователь ${ name } не найден`)
-                return apiRes.status(400).send(`Авторизация прошла не успешно, пользователь ${ name } не найден`)
-            } catch(error) {
-                console.log(error)
-                const message = error.message === undefined ? error.routine : error.message
+                
+                if (!isAuth) {
+                    console.log(`Авторизация прошла не успешно, пользователь ${name} не найден`)
+                    apiRes.status(400).send(`Авторизация прошла не успешно, пользователь ${name} не найден`)
+                }
+            } catch(e) {
+                console.log(e)
+                const message = e.message ? e.routine : e.message
                 apiRes.status(400).send(message)
+            } finally {
+                client.release()
             }
         })
 
         //Сохранение настроек
-        app.post('/api/save-settings', (apiReq, apiRes) => {
+        app.post('/api/save-settings', async (apiReq, apiRes) => {
             const { error } = _validateSettings(apiReq.body);
             if (error) return apiRes.status(400).send(error.details[0].message);
 
@@ -77,42 +76,25 @@ module.exports = class LoginApi {
 
             const query = `select value from account_cookies where acc_id = ${ authResult.id }
                                                     and module = '${ module }' and settings = '${ settings }'`
-    
-            pgPool.connect((connErr, client, done) => {
-                if (connErr) apiRes.status(400).send(connErr.detail)
-                
-                client
-                .query(query)
-                .then(
-                    queryResult => {
-                        const selectSettings = queryResult.rows[0]
-                        if (selectSettings) {
-                            const query = `update account_cookies set value = '${value}'
-                                                    where acc_id = ${authResult.id} and module = '${module}'
-                                                    and settings = '${settings}'`
-
-                            return { promise: client.query(query), action: 'update'}
-                        } else {
-                            const query = `insert into account_cookies (acc_id, module, settings, value)   
+            const client = await pgPool.connect()
+            try {
+                const cookies = await client.query(query)
+                const [ selectSettings ] = cookies.rows
+                const querySettings = selectSettings
+                    ? `update account_cookies set value = '${ value }'
+                                                    where acc_id = ${ authResult.id }
+                                                    and module = '${ module }'
+                                                    and settings = '${ settings }'`
+                    : `insert into account_cookies (acc_id, module, settings, value)
                                                  values (${ authResult.id },'${ module }','${ settings }','${ value }')`
-
-                            return { promise: client.query(query), action: 'new'}
-                        }
-                    }
-                ).then(
-                async result => {
-                    await result.promise
-                    result.action === "new" ? console.log(`Настройки созданы`) : console.log(`Настройки обновлены`)
-
-                    return apiRes.send({ action: result.action })
-                }
-                ).catch(
-                    error => {
-                        const message = error.message === undefined ? error.routine : error.message
-                        return apiRes.status(400).send(message)
-                    }
-                )
-            })
+                
+                await client.query(querySettings)
+                apiRes.send({ action: selectSettings ? 'update' : 'new' })
+            } catch ({ message }) {
+                apiRes.status(400).send(message)
+            } finally {
+                client.release()
+            }
         })
     }
 
@@ -123,24 +105,16 @@ module.exports = class LoginApi {
         }
 
         const token = apiReq.headers.authorization
-        //console.log(token)
-
         if (token && token !== 'null') {
-            //console.log(`Получен токен авторизации(модуль регистрации): ${token}`)
             try {
-                const authResult = jwt.verify(token, authKey)
-                console.log(`Пользователь идентифицирован: ${ authResult.name }\n`)
-                return authResult
-            } catch (e) {
-                if (e.message === 'jwt expired') {
-                    console.log(`срок токена авторизации истек\n`)
-                    apiRes.status(401).send('срок токена авторизации истек, авторизуйтесь заново')
-                } else {
-                    apiRes.status(401).send(e.message)
-                }
+                return jwt.verify(token, authKey)
+            } catch ({ message }) {
+                message === 'jwt expired'
+                    ? apiRes.status(401).send('срок токена авторизации истек, авторизуйтесь заново')
+                    : apiRes.status(401).send(message)
             }
         } else {
-            console.log(`срок токена авторизации истек: ${token}\n`)
+            console.log(`срок токена авторизации истек: ${ token }\n`)
             apiRes.status(401).send('срок токена авторизации истек, авторизуйтесь заново')
         }
     }

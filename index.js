@@ -1,5 +1,5 @@
 const express = require('express'),
-{ hostUrl } = require('./module-credentials'),
+{ hostUrl } = require('./host-url'),
 cors = require('cors'),
 fs = require('fs'),
 app = express(),

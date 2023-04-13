@@ -528,7 +528,9 @@ module.exports = class MeterRegistrationApi {
         app.get(`/api/${ module_name }/get-parent-mirc04-meters`, (apiReq, apiRes) => {
             showRequestInfoAndTime('Регистрация счетчиков: запрос на список родительских счетчиков МИР С04')
         
-            if (!checkAuth(apiReq, apiRes)) return
+            if (!checkAuth(apiReq, apiRes)) {
+                return
+            }
         
             const query = `select * from meters where type = 22`
             

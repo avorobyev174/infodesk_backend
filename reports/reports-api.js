@@ -1,7 +1,7 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection"),
 	{ getOraConnectionUit, getOraConnectionCnt } = require("../database/oracle/oracle-db-connection"),
 	{ pgStekASDPool } = require("../database/postgres/postgres-stek-asd-db-connection"),
-	{ showRequestInfoAndTime, joi, executePGIQuery } = require('../utils'),
+	{ showRequestInfoAndTime, joi, executePGIQuery, executeOraQuery } = require('../utils'),
 	{ checkAuth } = require('../login/login-api'),
 	module_name = 'reports'
 
@@ -432,6 +432,54 @@ module.exports = class ReportsApi {
 				)
 				
 			})
+		})
+		
+		app.get(`/api/${ module_name }/get-rotec-meters-info`, async (apiReq, apiRes) => {
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
+			
+			try {
+				const queryOra = `select serial_number from meter where meter_type = 117`
+				
+				const oraConn = await getOraConnectionUit()
+				let response = await oraConn.execute(queryOra)
+				oraConn.close()
+				const storageMeters = response.rows
+				
+				const client = await pgPool.connect()
+				response = await client.query(`select serial_number, port, ip_address from meters where type = 30 order by port`)
+				client.release()
+				const programmingMeters = response.rows
+				
+				if (!programmingMeters.length) {
+					return apiRes.status(400).send('не найдено счетчиков Ротек на складе')
+				}
+				
+				const [ lastMeter ] =  programmingMeters.slice(-1)
+				
+				let portIncVal = 0
+				const totalMeters = storageMeters.map((storageMeter) => {
+					const meter = programmingMeters.find((progMeter) =>
+						 progMeter.serial_number === storageMeter.SERIAL_NUMBER)
+					
+					if (meter) {
+						return meter
+					} else {
+						portIncVal++
+						return {
+							serial_number: storageMeter.SERIAL_NUMBER,
+							port: lastMeter.port + portIncVal,
+							ip_address: lastMeter.ip_address,
+							new: true
+						}
+					}
+				})
+				
+				apiRes.status(200).send(totalMeters)
+			} catch ({ message }) {
+				return apiRes.status(400).send(message)
+			}
 		})
 	}
 }

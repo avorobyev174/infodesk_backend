@@ -60,7 +60,7 @@ module.exports = class MeterStorageApi {
 								property,
 								guid
 							from meter order by id ${ sortDesc[0] ? 'desc' : '' }`
-			console.log(query)
+			
 			getOraConnectionUit().then(
 				oraConn => {
 					oraConn.execute(query).then(
@@ -100,11 +100,11 @@ module.exports = class MeterStorageApi {
 				return
 			
 			showRequestInfoAndTime(`Склад счетчиков: запрос на фильтрацию`)
-			console.log(apiReq.body)
+			//console.log(apiReq.body)
 			
 			const { serialNumber, types, locations, owners } = apiReq.body.filters
 			const { page, itemsPerPage, sortBy, sortDesc } = apiReq.body.options
-			console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
+			//console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
 			
 			let filters = []
 			let desc = ''
@@ -158,31 +158,6 @@ module.exports = class MeterStorageApi {
 			} catch ({ message }) {
 				apiRes.status(400).send(message)
 			}
-			//console.log(query)
-			// getOraConnectionUit().then(
-			// 	oraConn => {
-			// 		oraConn.execute(query).then(
-			// 			result => {
-			// 				oraConn.close()
-			// 				//console.log(result.rows, page, itemsPerPage)
-			// 				let rows = result.rows
-			// 				const total = rows.length
-			// 				console.log(total)
-			// 				if (page && itemsPerPage) {
-			// 					if (rows.length > itemsPerPage) {
-			// 						rows = rows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
-			// 					}
-			// 				}
-			// 				return apiRes.send({ rows, total })
-			// 			},
-			// 			error => {
-			// 				oraConn.close()
-			// 				console.log(`Запрос (${ query }). Ошибка: ${ error }`);
-			// 				apiRes.status(400).send(error.detail);
-			// 			}
-			// 		)
-			// 	}
-			// )
 		})
 		
 		app.get(`/api/${ module_name }/employees`, (apiReq, apiRes) => {

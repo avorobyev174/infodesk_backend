@@ -14,7 +14,6 @@ module.exports = class acceptOrIssueApi {
 				return
 				
 			const { serialNumber, type } = apiReq.body
-			//console.log(serialNumber, type)
 			
 			showRequestInfoAndTime('Склад счетчиков: запрос на получение счетчика по type и serialNumber')
 			
