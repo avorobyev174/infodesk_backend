@@ -29,8 +29,9 @@ module.exports = class acceptOrIssueApi {
 				return apiRes.status(400).send(error.details[0].message)
 			}
 			
-			if (!checkAuth(apiReq, apiRes))
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 			
 			const {
 				meters,
@@ -49,7 +50,7 @@ module.exports = class acceptOrIssueApi {
 			const calibrationDate = !calibration ? null : `TO_DATE('${ calibration }', 'yyyy-mm-dd')`
 			const operationType = isRouter ? 1 : 7
 			const meterLocation = isRouter ? 1 : 0
-			showRequestInfoAndTime('Склад счетчиков: запрос на регистрация счетчика')
+			showRequestInfoAndTime('Склад счетчиков: запрос на регистрация счетчиков')
 			
 			const oraConn = await getOraConnectionUit()
 			

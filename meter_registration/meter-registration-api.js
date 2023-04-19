@@ -253,6 +253,7 @@ module.exports = class MeterRegistrationApi {
                     .then(
                         async result => {
                             const editedMeter = result.queryMeterResult.rows[0]
+                            done()
                             console.log(`Счетчик ${editedMeter.id} отредактирован успешно\n`)
     
                             const queryResult = await result.promise
@@ -262,6 +263,7 @@ module.exports = class MeterRegistrationApi {
                         })
                     .catch(
                         error => {
+                            done()
                             const message = error.message === undefined ? error.routine : error.message
                             return apiRes.status(400).send(message)
                         }
@@ -582,5 +584,5 @@ function _validateRemoveMeterPyramidLoadValue(meter) {
     const schema = {
         meter: joi.object().required()
     }
-    return joi.validate(meter, schema);
+    return joi.validate(meter, schema)
 }
