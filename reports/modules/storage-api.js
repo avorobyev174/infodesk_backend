@@ -92,9 +92,7 @@ module.exports = class ReportsStorageApi {
 					"from meter_log ml, meter m " +
 					`where datetime between TO_DATE('${ startDate } 00:00', 'yyyy-mm-dd hh24:mi') ` +
 					`and TO_DATE('${ endDate } 23:59', 'yyyy-mm-dd hh24:mi') and m.guid = ml.meter_guid order by datetime`
-				
-				console.log(queryOra)
-				
+					
 				let { rows } = await oraConn.execute(queryOra)
 				oraConn.close()
 				
