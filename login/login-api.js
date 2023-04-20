@@ -14,7 +14,6 @@ module.exports = class LoginApi {
             showRequestInfoAndTime(`Получен запрос на авторизацию ${ name } ${ password }`)
             const client = await pgPool.connect()
             try {
-                console.log('pool connect')
                 const accounts = await client.query(`select * from accounts`)
                 if (!accounts.rows) {
                     return apiRes.status(400).send(`Что то пошло не так при авторизации`)

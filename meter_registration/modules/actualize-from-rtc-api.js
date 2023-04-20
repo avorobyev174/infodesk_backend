@@ -226,8 +226,8 @@ module.exports = class actualizeFromRTCApi {
 					
 					console.log(`smpp соединение установлено`)
 					session.bind_transceiver({
-						system_id: 'MGN_MEK_MGN1.13',
-						password: 'cMcFGBghjuh_GE13'
+						system_id: beeline.user,
+						password:  beeline.password
 					}, pdu => {
 						console.log('pdu получен')
 						//console.log(pdu)
