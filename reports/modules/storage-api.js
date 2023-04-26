@@ -88,10 +88,10 @@ module.exports = class ReportsStorageApi {
 			try {
 				const queryOra =
 					"select to_char(ml.datetime, 'dd.mm.yyyy hh24:mi:ss') as datetime, ml.oper_type, " +
-					"m.serial_number, ml.issuing_person, ml.accepted_person, ml.comment_field " +
+					"m.meter_type as type, m.serial_number, ml.issuing_person, ml.accepted_person, ml.comment_field " +
 					"from meter_log ml, meter m " +
-					`where datetime between TO_DATE('${ startDate } 00:00', 'yyyy-mm-dd hh24:mi') ` +
-					`and TO_DATE('${ endDate } 23:59', 'yyyy-mm-dd hh24:mi') and m.guid = ml.meter_guid order by datetime`
+					`where datetime between TO_DATE('${ startDate } 00:00', 'dd.mm.yyyy hh24:mi') ` +
+					`and TO_DATE('${ endDate } 23:59', 'dd.mm.yyyy hh24:mi') and m.guid = ml.meter_guid order by datetime`
 					
 				let { rows } = await oraConn.execute(queryOra)
 				oraConn.close()
@@ -340,6 +340,211 @@ module.exports = class ReportsStorageApi {
 						acceptedPerson: firstLog.ACCEPTED_PERSON,
 						comment: firstLog.COMMENT_FIELD
 					})
+				}
+				
+				apiRes.status(200).send(data)
+			} catch ({ message }) {
+				return apiRes.status(400).send(message)
+			}
+		})
+		
+		app.get(`/api/${ module_name }/get-repair-count-and-material-report`, async (apiReq, apiRes) => {
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
+			
+			const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+														"Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь" ]
+			
+			const oraConn = await getOraConnectionUit()
+			const today = new Date()
+			const currentYear = today.getFullYear()
+			const meterTypeMap = new Map()
+			
+			try {
+				for (const month of months) {
+					let monthNumber = months.indexOf(month) + 1
+					let date = new Date(currentYear, monthNumber, 0)
+					let startDate = `1.${ monthNumber }.${ currentYear } 00:00`
+					let endDate = `${ date.getDate() }.${ monthNumber }.${ currentYear } 23:59`
+				
+					const queryOra =
+						"select type, count(statusOK) as ok, count(statusNotOk) as break " +
+							"from (select meter.meter_type as type, st1.status as statusOK, st2.status as statusNotOk " +
+							"from meter right join meter_log on meter.guid = meter_log.meter_guid " +
+							"full outer join meter_work_status st1 on st1.log_id = meter_log.id and st1.status = 1 " +
+							`and st1.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi') and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi') ` +
+							"full outer join meter_work_status st2 on st2.log_id = meter_log.id and st2.status = 0 " +
+							`and st2.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi') and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi') ` +
+							"where meter_log.oper_type = 1) group by type order by type"
+					
+					const { rows } = await oraConn.execute(queryOra)
+					
+					
+					for (const row of rows) {
+						let results = []
+						const meterMonthMap = new Map()
+						
+						if (row.OK !== 0 || row.BREAK !== 0) {
+							meterMonthMap.set(monthNumber, { OK : row.OK, BREAK : row.BREAK})
+						}
+				
+						if (meterTypeMap.has(row.TYPE)) {
+							const monthArr = meterTypeMap.get(row.TYPE)
+							monthArr.push(meterMonthMap)
+							results = monthArr
+						} else {
+							if (meterMonthMap.size) {
+								results.push(meterMonthMap)
+							}
+						}
+						if (results.length) {
+							meterTypeMap.set(row.TYPE, results)
+						}
+					}
+				}
+				
+				oraConn.close()
+				
+				let records = []
+				let data = []
+				for (let entry of meterTypeMap) {
+					if (!entry[0]) {
+						continue
+					}
+					
+					let record = []
+					let row = []
+					row.push(entry[0])
+					
+					for (let i = 1; i <= today.getMonth() + 1; i++) {
+						let monthArr = entry[1]
+						let infoFind = false
+						for (let j = 0; j < monthArr.length; j++) {
+							if (monthArr[j].has(i)) {
+								infoFind = true
+								record.push(parseInt(monthArr[j].get(i).OK))
+								record.push(parseInt(monthArr[j].get(i).BREAK))
+								row.push([ parseInt(monthArr[j].get(i).OK), parseInt(monthArr[j].get(i).BREAK) ])
+							}
+						}
+						if (!infoFind) {
+							record.push(0)
+							record.push(0)
+							row.push([ 0, 0 ])
+						}
+					}
+					
+					let sumOk = 0, sumBreak = 0
+					for (let i = 0; i < record.length; i++) {
+						i % 2 === 0 ? sumOk += record[i] : sumBreak += record[i]
+					}
+					row.push([ sumOk, sumBreak ])
+					
+					const sum = sumBreak/(sumBreak + sumOk) * 100
+					row.push(isNaN(sum) || sum === 0 ? '0%' : sum.toFixed(2) + '%')
+					
+					records.push(record)
+					data.push(row)
+				}
+				
+				const row = []
+				let totalRow = []
+				
+				for (let j = 0; j < (today.getMonth() + 1) * 2; j++) {
+					let total = 0
+					for (let i = 0; i < records.length; i++) {
+						total += records[i][j]
+					}
+					totalRow.push(total)
+				}
+				
+				for (let j = 0; j < totalRow.length; j += 2) {
+					row.push([ totalRow[j] , totalRow[j + 1] ])
+				}
+				
+				let sumOk = 0, sumBreak = 0
+				for (let i = 0; i < totalRow.length; i++) {
+					i % 2 === 0 ? sumOk += totalRow[i] : sumBreak += totalRow[i]
+				}
+				row.push([ sumOk, sumBreak ])
+				
+				const sum = sumBreak/(sumBreak + sumOk) * 100
+				row.push(isNaN(sum) || sum === 0 ? '0%' : sum.toFixed(2) + '%')
+				data.push(row)
+				
+				apiRes.status(200).send(data)
+			} catch ({ message }) {
+				return apiRes.status(400).send(message)
+			}
+		})
+		
+		app.get(`/api/${ module_name }/get-spent-by-year-report`, async (apiReq, apiRes) => {
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
+			const materialMap = new Map()
+			const oraConn = await getOraConnectionUit()
+			
+			try {
+				const yearSpentQueryOra =
+					"select item_id, sum(amount) as amount " +
+					"from meter_spent_item " +
+					"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
+					`and datetime >= TO_DATE('01.01.${ (new Date()).getFullYear() }  00:01', 'dd.mm.yyyy hh24:mi') ` +
+					"group by item_id order by item_id"
+				
+				const yearMaterialSpent = await oraConn.execute(yearSpentQueryOra)
+				for (const row of yearMaterialSpent.rows) {
+					materialMap.set(row.ITEM_ID, { spentYearAmount : row.AMOUNT })
+				}
+			
+				const totalSpentQueryOra =
+					"select item_id, sum(amount) as amount " +
+					"from meter_spent_item " +
+					"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
+					"group by item_id order by item_id"
+				
+				const totalMaterialSpent = await oraConn.execute(totalSpentQueryOra)
+				for (const row of totalMaterialSpent.rows) {
+					if (materialMap.has(row.ITEM_ID)) {
+						materialMap.get(row.ITEM_ID).spentAmount = row.AMOUNT
+					} else {
+						materialMap.set(row.ITEM_ID, { spentAmount: row.AMOUNT })
+					}
+				}
+				
+				const storageQueryOra =
+					"select item_id, sum(amount) as amount " +
+					"from meter_item_storage " +
+					"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
+					"group by item_id order by item_id"
+				
+				const storageMaterial = await oraConn.execute(storageQueryOra)
+				for (const row of storageMaterial.rows) {
+					if (materialMap.has(row.ITEM_ID)) {
+						materialMap.get(row.ITEM_ID).storageAmount = row.AMOUNT
+					} else {
+						materialMap.set(row.ITEM_ID, { storageAmount: row.AMOUNT })
+					}
+				}
+			
+				oraConn.close()
+				
+				const data = []
+				for (let entry of materialMap) {
+					const amount =  entry[1]
+					let { storageAmount } = amount
+					storageAmount = storageAmount ? storageAmount : 0
+					const { spentYearAmount } = amount
+					const { spentAmount } = amount
+					const totalAmount = storageAmount - spentAmount
+					
+					data.push([
+						entry[0],
+						spentYearAmount ? spentYearAmount : 0,
+						totalAmount
+					])
 				}
 				
 				apiRes.status(200).send(data)

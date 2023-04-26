@@ -49,26 +49,64 @@ module.exports = class repairAndMaterials {
 			executeOraQuery(query, apiRes)
 		})
 		
-		app.get(`/api/${ module_name }/get-available-meters-from-repair/:type`, (apiReq, apiRes) => {
+		app.get(`/api/${ module_name }/get-available-meters-from-repair/:type`, async (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
 			
 			const meterType = apiReq.params.type
-			const query = `select meter_type, serial_number, guid from meter where meter_location = 1
+			const query = `select id, meter_type, serial_number, guid from meter where meter_location = 1
 															${ meterType ? ' and meter_type = ' + meterType : '' }`
-			console.log(query)
-			executeOraQuery(query, apiRes)
+			
+			const oraConn = await getOraConnectionUit()
+			const { rows } = await oraConn.execute(query)
+			
+			const data = await Promise.all(rows.map(async (row) => {
+				const queryLog =
+					"select meter_log.update_field from meter_log " +
+					"where meter_log.id = ( select max(ml.id)  " +
+					"from meter m, meter_log ml " +
+					"where m.meter_location = 1 " +
+					`and m.id = ${ row.ID } ` +
+					"and m.guid = ml.meter_guid " +
+					"and ml.oper_type = 1)"
+				
+				const { rows } = await oraConn.execute(queryLog)
+				const [ lastUpdateField ] = rows
+				const updateField = lastUpdateField.UPDATE_FIELD
+				return { ...row, updateField }
+			}))
+			
+			return apiRes.send(data)
 		})
 		
-		app.get(`/api/${ module_name }/get-available-meters-from-repair/`, (apiReq, apiRes) => {
+		app.get(`/api/${ module_name }/get-available-meters-from-repair/`, async (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
 		
-			const query = `select meter_type, serial_number, guid from meter where meter_location = 1`
-			console.log(query)
-			executeOraQuery(query, apiRes)
+			const query = `select id, meter_type, serial_number, guid from meter where meter_location = 1`
+			
+			const oraConn = await getOraConnectionUit()
+			const { rows } = await oraConn.execute(query)
+			
+			const data = await Promise.all(rows.map(async (row) => {
+				const queryLog =
+					"select meter_log.update_field from meter_log " +
+					"where meter_log.id = ( select max(ml.id)  " +
+					"from meter m, meter_log ml " +
+					"where m.meter_location = 1 " +
+					`and m.id = ${ row.ID } ` +
+					"and m.guid = ml.meter_guid " +
+					"and ml.oper_type = 1)"
+				
+				const { rows } = await oraConn.execute(queryLog)
+				const [ lastUpdateField ] = rows
+				const updateField = lastUpdateField.UPDATE_FIELD
+				return { ...row, updateField }
+			}))
+			
+			return apiRes.send(data)
 		})
 		
 		app.post(`/api/${ module_name }/insert-meter-materials`, async (apiReq, apiRes) => {
@@ -217,8 +255,12 @@ module.exports = class repairAndMaterials {
 					console.log(insertQuery)
 					const insertResponse = await oraConn.execute(insertQuery)
 					console.log(insertResponse)
-					
-					updateField += updateStr
+					if (updateField) {
+						updateField += updateStr
+					} else {
+						updateField = updateStr
+					}
+			
 					const updateQuery = `update meter_log set update_field = '${ updateField }' where id = ${ logId }`
 					console.log(updateQuery)
 					const updateResponse = await oraConn.execute(updateQuery)

@@ -37,14 +37,17 @@ module.exports = class MeterStorageApi {
 		})
 		
 		//Получение списка счетчиков постранично
-		app.post(`/api/${ module_name }/meters`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes))
+		app.post(`/api/${ module_name }/meters`, async (apiReq, apiRes) => {
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 			
-			const { page, itemsPerPage, sortBy, sortDesc } = apiReq.body.options
+			const { page, itemsPerPage, sortBy, sortDesc, role } = apiReq.body.options
 			
 			console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
 			showRequestInfoAndTime('Склад счетчиков: запрос на информацию о счетчиках склада порциями')
+			
+			const roleOption = role === 'repairer' ? ` where meter_location = 1 ` : ''
 			
 			const query = `select
 								id,
@@ -59,26 +62,51 @@ module.exports = class MeterStorageApi {
 								current_owner,
 								property,
 								guid
-							from meter order by id ${ sortDesc[0] ? 'desc' : '' }`
+							from meter
+							${ roleOption }
+							order by id ${ sortDesc[0] ? 'desc' : '' }`
 			
-			getOraConnectionUit().then(
-				oraConn => {
-					oraConn.execute(query).then(
-						result => {
-							oraConn.close()
-							const total = result.rows.length
-							const rows = result.rows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
-							
-							apiRes.send({ rows, total })
-						},
-						error => {
-							oraConn.close()
-							console.log(`Запрос (${ query }). Ошибка: ${ error }`)
-							apiRes.status(400).send(error.detail)
+			const oraConn = await getOraConnectionUit()
+			
+			try {
+				let { rows } = await oraConn.execute(query)
+				const total = rows.length
+				let data = rows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
+				
+				if (role === 'repairer') {
+					data = await Promise.all(data.map(async (row) => {
+						const queryLog =
+							"select meter_log.update_field from meter_log " +
+							"where meter_log.id = ( select max(ml.id)  " +
+							"from meter m, meter_log ml " +
+							"where m.meter_location = 1 " +
+							`and m.id = ${ row.ID } ` +
+							"and m.guid = ml.meter_guid " +
+							"and ml.oper_type = 1)"
+						
+						const { rows } = await oraConn.execute(queryLog)
+						const [ lastUpdateField ] = rows
+						const updateField = lastUpdateField.UPDATE_FIELD
+						let color = 0
+						if (updateField) {
+							color = updateField.includes('Статус ремонта:')
+								? 2
+								: updateField.includes('Используемые материалы:')
+									? 1
+									: 0
 						}
-					)
+						
+						return { ...row, repairColor: color }
+					}))
 				}
-			)
+				
+				apiRes.send({ rows: data, total })
+			} catch (e) {
+				console.log(e)
+				apiRes.status(400).send(e.detail)
+			} finally {
+				oraConn.close()
+			}
 		})
 		
 		app.get(`/api/${ module_name }/meter-types`, (apiReq, apiRes) => {
@@ -96,15 +124,16 @@ module.exports = class MeterStorageApi {
 			const { error } = _validateFilters(apiReq.body)
 			if (error) return apiRes.status(400).send(error.details[0].message)
 			
-			if (!checkAuth(apiReq, apiRes))
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 			
 			showRequestInfoAndTime(`Склад счетчиков: запрос на фильтрацию`)
 			//console.log(apiReq.body)
 			
 			const { serialNumber, types, locations, owners } = apiReq.body.filters
-			const { page, itemsPerPage, sortBy, sortDesc } = apiReq.body.options
-			//console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
+			const { page, itemsPerPage, sortBy, sortDesc, role } = apiReq.body.options
+			console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
 			
 			let filters = []
 			let desc = ''
@@ -140,7 +169,12 @@ module.exports = class MeterStorageApi {
 				return sum + cur
 			}, '')
 			
-			const query = `select * from meter  where ${ queryBody } order by id ${ desc }`
+			let roleOption = ''
+			if (role === 'repairer') {
+				roleOption = ` ${ queryBody ? 'and' : '' } meter_location = 1 `
+			}
+			
+			const query = `select * from meter where ${ queryBody } ${ roleOption } order by id ${ desc }`
 			console.log(query)
 			try {
 				const conn = await getOraConnectionUit()
@@ -148,7 +182,7 @@ module.exports = class MeterStorageApi {
 				conn.close()
 				let rows = queryRes.rows
 				const total = rows.length
-				console.log(total)
+				
 				if (page && itemsPerPage) {
 					if (total > itemsPerPage) {
 						rows = rows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
