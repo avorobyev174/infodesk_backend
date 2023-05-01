@@ -26,14 +26,12 @@ function getDateTime() {
 }
 
 async function executePGIQuery(query, apiRes) {
-    //console.log(query)
     const client = await pgPool.connect()
     try {
         const { rows } = await client.query(query)
         apiRes.send(rows)
     } catch (e) {
-        console.log(`Запрос (${ query }). Ошибка: ${ e }`)
-        apiRes.status(400).send(e.detail)
+        apiRes.status(400).send(e.detail || e.message)
     } finally {
         client.release()
     }

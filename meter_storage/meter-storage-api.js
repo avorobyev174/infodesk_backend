@@ -1,6 +1,5 @@
-const { getOraConnectionUit } = require('../database/oracle/oracle-db-connection.js')
 const { pgPool } = require("../database/postgres/postgres-db-connection")
-const { getDateTime, showRequestInfoAndTime, joi, executePGIQuery, executeOraQuery } = require('../utils')
+const { getDateTime, joi, executePGIQuery } = require('../utils')
 const { checkAuth } = require('../login/login-api')
 const module_name = 'meter-storage'
 const acceptOrIssueOrRegApi = require('./modules/accept-or-issue-or-register-api')
@@ -11,31 +10,6 @@ module.exports = class MeterStorageApi {
 		new acceptOrIssueOrRegApi(app, module_name)
 		new repairAndMaterialsApi(app, module_name)
 		
-		//Получение списка счетчиков
-		app.get(`/api/${ module_name }/meters`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes))
-				return
-			
-			showRequestInfoAndTime('Склад счетчиков: запрос на информацию о счетчиках склада')
-			
-			const query = `select
-								id,
-								meter_type,
-								serial_number,
-								accuracy_class,
-								passport_number,
-								condition,
-								calibration_date,
-								calibration_interval,
-								meter_location,
-								current_owner,
-								property,
-								guid
-							from meter where rownum <= 100`
-			
-			executeOraQuery(query, apiRes)
-		})
-		
 		//Получение списка счетчиков постранично
 		app.post(`/api/${ module_name }/meters`, async (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
@@ -43,33 +17,16 @@ module.exports = class MeterStorageApi {
 			}
 			
 			const { page, itemsPerPage, sortBy, sortDesc, role } = apiReq.body.options
-			
 			console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
-			showRequestInfoAndTime('Склад счетчиков: запрос на информацию о счетчиках склада порциями')
 			
 			const roleOption = role === 'repairer' ? ` where meter_location = 1 ` : ''
+			const query = "select id, meter_type, serial_number, accuracy_class, passport_number, condition, " +
+							"calibration_interval, calibration_date, meter_location, current_owner, property, guid " +
+							`from meter ${ roleOption } order by id ${ sortDesc[0] ? 'desc' : '' }`
 			
-			const query = `select
-								id,
-								meter_type,
-								serial_number,
-								accuracy_class,
-								passport_number,
-								condition,
-								calibration_date,
-								calibration_interval,
-								meter_location,
-								current_owner,
-								property,
-								guid
-							from meter
-							${ roleOption }
-							order by id ${ sortDesc[0] ? 'desc' : '' }`
-			
-			const oraConn = await getOraConnectionUit()
-			
+			const client = await pgPool.connect()
 			try {
-				let { rows } = await oraConn.execute(query)
+				const { rows } = await client.query(query)
 				const total = rows.length
 				let data = rows.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 				
@@ -80,13 +37,13 @@ module.exports = class MeterStorageApi {
 							"where meter_log.id = ( select max(ml.id)  " +
 							"from meter m, meter_log ml " +
 							"where m.meter_location = 1 " +
-							`and m.id = ${ row.ID } ` +
+							`and m.id = ${ row.id } ` +
 							"and m.guid = ml.meter_guid " +
 							"and ml.oper_type = 1)"
 						
-						const { rows } = await oraConn.execute(queryLog)
+						const { rows } = await client.query(queryLog)
 						const [ lastUpdateField ] = rows
-						const updateField = lastUpdateField.UPDATE_FIELD
+						const updateField = lastUpdateField.update_field
 						let color = 0
 						if (updateField) {
 							color = updateField.includes('Статус ремонта:')
@@ -105,7 +62,7 @@ module.exports = class MeterStorageApi {
 				console.log(e)
 				apiRes.status(400).send(e.detail)
 			} finally {
-				oraConn.close()
+				client.release()
 			}
 		})
 		
@@ -113,11 +70,9 @@ module.exports = class MeterStorageApi {
 			if (!checkAuth(apiReq, apiRes))
 				return
 			
-			showRequestInfoAndTime('Склад счетчиков: запрос на типы счетчиков')
+			const query = `select * from meter_storage_type order by type_name`
 			
-			const query = `select * from meter_type order by type_name`
-			
-			executeOraQuery(query, apiRes)
+			executePGIQuery(query, apiRes)
 		})
 		
 		app.post(`/api/${ module_name }/filter`, async (apiReq, apiRes) => {
@@ -127,9 +82,6 @@ module.exports = class MeterStorageApi {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
-			
-			showRequestInfoAndTime(`Склад счетчиков: запрос на фильтрацию`)
-			//console.log(apiReq.body)
 			
 			const { serialNumber, types, locations, owners } = apiReq.body.filters
 			const { page, itemsPerPage, sortBy, sortDesc, role } = apiReq.body.options
@@ -175,12 +127,9 @@ module.exports = class MeterStorageApi {
 			}
 			
 			const query = `select * from meter where ${ queryBody } ${ roleOption } order by id ${ desc }`
-			console.log(query)
+			const client = await pgPool.connect()
 			try {
-				const conn = await getOraConnectionUit()
-				const queryRes = await conn.execute(query);
-				conn.close()
-				let rows = queryRes.rows
+				let { rows } = await client.query(query)
 				const total = rows.length
 				
 				if (page && itemsPerPage) {
@@ -191,55 +140,39 @@ module.exports = class MeterStorageApi {
 				return apiRes.send({ rows, total })
 			} catch ({ message }) {
 				apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 		
-		app.get(`/api/${ module_name }/employees`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes))
+		app.get(`/api/${ module_name }/storage-employees`, (apiReq, apiRes) => {
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 			
-			showRequestInfoAndTime('Склад счетчиков: запрос на список сотрудников')
-			
-			const query = `select * from meter_employees`
-			
-			executeOraQuery(query, apiRes)
+			executePGIQuery(`select staff_id, name, card from employees`, apiRes)
 		})
 		
-		app.get(`/api/${ module_name }/storage-employees`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes))
+		app.get(`/api/${ module_name }/logs/:guid`, (apiReq, apiRes) => {
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 			
-			showRequestInfoAndTime('Склад счетчиков: запрос на список внутренних сотрудников')
+			const guid = apiReq.params.guid
+			if (!guid) {
+				return apiRes.status(400).send('GUID счетчика отсутствует')
+			}
 			
-			const query = `select staff_id, name, card from employees`
-			
+			const query = `select * from meter_log where meter_guid = '${ guid }' order by id desc, datetime desc`
 			executePGIQuery(query, apiRes)
 		})
 		
-		app.get(`/api/${ module_name }/logs/:GUID`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes))
-				return
-			
-			const GUID = apiReq.params.GUID
-			if (!GUID)
-				return apiRes.status(400).send('GUID счетчика отсутствует')
-			
-			showRequestInfoAndTime('Склад счетчиков: запрос на счетчик по guid')
-			
-			const query = `select * from meter_log where meter_guid = '${ GUID }' order by id desc, datetime desc`
-			
-			executeOraQuery(query, apiRes)
-		})
-		
 		app.get(`/api/${ module_name }/parse-options`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes))
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 			
-			showRequestInfoAndTime('Склад счетчиков: запрос на опции парсинга')
-			
-			const query = `select id, barcode_thrue_index as parse_option from meter_mnf`
-			
-			executeOraQuery(query, apiRes)
+			executePGIQuery(`select id, barcode_thrue_index as parse_option from meter_mnf`, apiRes)
 		})
 	}
 }

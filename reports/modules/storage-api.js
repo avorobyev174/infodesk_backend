@@ -1,5 +1,5 @@
-const { getOraConnectionUit } = require("../../database/oracle/oracle-db-connection"),
-{ joi, executeOraQuery } = require('../../utils'),
+const { pgPool } = require("../../database/postgres/postgres-db-connection"),
+{ joi, executePGIQuery } = require('../../utils'),
 { checkAuth } = require('../../login/login-api')
 
 module.exports = class ReportsStorageApi {
@@ -10,17 +10,9 @@ module.exports = class ReportsStorageApi {
 				return
 			}
 			
-			const oraConn = await getOraConnectionUit()
+			executePGIQuery('SELECT meter_location, count(meter_location) ' +
+									'AS count FROM meter GROUP BY meter_location', apiRes)
 			
-			try {
-				const queryOra = 'SELECT meter_location, count(meter_location) AS count FROM meter GROUP BY meter_location'
-				let { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
-				
-				apiRes.status(200).send(rows)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
-			}
 		})
 		
 		app.get(`/api/${ module_name }/get-owner-report`, async (apiReq, apiRes) => {
@@ -28,18 +20,9 @@ module.exports = class ReportsStorageApi {
 				return
 			}
 			
-			const oraConn = await getOraConnectionUit()
+			executePGIQuery('SELECT current_owner, count(meter_location) AS count' +
+				' FROM meter GROUP BY current_owner', apiRes)
 			
-			try {
-				const queryOra = 'SELECT current_owner, count(meter_location) AS count FROM meter GROUP BY current_owner'
-				
-				let { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
-				
-				apiRes.status(200).send(rows)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
-			}
 		})
 		
 		app.post(`/api/${ module_name }/get-meter-report`, async (apiReq, apiRes) => {
@@ -53,23 +36,15 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { type, serialNumber } = apiReq.body
-			const oraConn = await getOraConnectionUit()
+			const query =
+				"select to_char(ml.datetime, 'dd.mm.yyyy hh24:mi:ss') as datetime, ml.oper_type, " +
+				" ml.issuing_person, ml.accepted_person, ml.comment_field," +
+				" ml.update_field from meter_log ml, meter m where " +
+				`ml.meter_guid = m.guid and m.serial_number = '${ serialNumber }' and ` +
+				`m.meter_type = ${ type } order by ml.id`
 			
-			try {
-				const queryOra =
-					"select to_char(ml.datetime, 'dd.mm.yyyy hh24:mi:ss') as datetime, ml.oper_type, " +
-					" ml.issuing_person, ml.accepted_person, ml.comment_field," +
-					" ml.update_field from meter_log ml, meter m where " +
-					`ml.meter_guid = m.guid and m.serial_number = '${ serialNumber }' and ` +
-					`m.meter_type = ${ type } order by ml.id`
-				
-				let { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
-				
-				apiRes.status(200).send(rows)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
-			}
+			
+			executePGIQuery(query, apiRes)
 		})
 		
 		app.post(`/api/${ module_name }/get-storage-logs-by-period-report`, async (apiReq, apiRes) => {
@@ -83,23 +58,14 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { startDate, endDate } = apiReq.body
-			const oraConn = await getOraConnectionUit()
+			const query =
+				"select to_char(ml.datetime, 'dd.mm.yyyy hh24:mi:ss') as datetime, ml.oper_type, " +
+				"m.meter_type as type, m.serial_number, ml.issuing_person, ml.accepted_person, ml.comment_field " +
+				"from meter_log ml, meter m " +
+				`where datetime between '${ startDate } 00:00:00' ` +
+				`and '${ endDate } 23:59:00' and m.guid = ml.meter_guid order by datetime`
 			
-			try {
-				const queryOra =
-					"select to_char(ml.datetime, 'dd.mm.yyyy hh24:mi:ss') as datetime, ml.oper_type, " +
-					"m.meter_type as type, m.serial_number, ml.issuing_person, ml.accepted_person, ml.comment_field " +
-					"from meter_log ml, meter m " +
-					`where datetime between TO_DATE('${ startDate } 00:00', 'dd.mm.yyyy hh24:mi') ` +
-					`and TO_DATE('${ endDate } 23:59', 'dd.mm.yyyy hh24:mi') and m.guid = ml.meter_guid order by datetime`
-					
-				let { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
-				
-				apiRes.status(200).send(rows)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
-			}
+			executePGIQuery(query, apiRes)
 		})
 		
 		app.post(`/api/${ module_name }/get-in-out-by-period-and-location-report`, async (apiReq, apiRes) => {
@@ -114,20 +80,18 @@ module.exports = class ReportsStorageApi {
 			
 			const { location, startDate, endDate } = apiReq.body
 			const operationType = location === 0 ? '0, 7, 9' : location
-			const oraConn = await getOraConnectionUit()
+			const client = await pgPool.connect()
 			
 			try {
-				const queryOraTypesAndCountStart = getQueryStartOrEndCount({ startDate }, { operationType })
-				const queryOraTypesAndEnd = getQueryStartOrEndCount({ endDate }, { operationType })
+				const queryTypesAndCountStart = getQueryStartOrEndCount({ startDate }, { operationType })
+				const queryTypesAndEnd = getQueryStartOrEndCount({ endDate }, { operationType })
 				const queryComingCount = getQueryComingCount({ location }, startDate, endDate)
 				const queryLeaveCount = getQueryLeaveCount({ location }, startDate, endDate)
 				
-				let typesAndCountStart = await oraConn.execute(queryOraTypesAndCountStart)
-				let typesAndCountEnd = await oraConn.execute(queryOraTypesAndEnd)
-				let comingCount = await oraConn.execute(queryComingCount)
-				let leaveCount = await oraConn.execute(queryLeaveCount)
-				
-				oraConn.close()
+				let typesAndCountStart = await client.query(queryTypesAndCountStart)
+				let typesAndCountEnd = await client.query(queryTypesAndEnd)
+				let comingCount = await client.query(queryComingCount)
+				let leaveCount = await client.query(queryLeaveCount)
 				
 				const meterCountMap = new Map()
 				
@@ -139,6 +103,8 @@ module.exports = class ReportsStorageApi {
 				apiRes.status(200).send(Object.fromEntries(meterCountMap))
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 		
@@ -153,7 +119,7 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { empStaffId, startDate, endDate } = apiReq.body
-			const oraConn = await getOraConnectionUit()
+			const client = await pgPool.connect()
 			
 			try {
 				const queryOraTypesAndCountStart = getQueryStartOrEndCount({ startDate }, { empStaffId })
@@ -161,12 +127,10 @@ module.exports = class ReportsStorageApi {
 				const queryComingCount = getQueryComingCount({ empStaffId }, startDate, endDate)
 				const queryLeaveCount = getQueryLeaveCount({ empStaffId }, startDate, endDate)
 				
-				let typesAndCountStart = await oraConn.execute(queryOraTypesAndCountStart)
-				let typesAndCountEnd = await oraConn.execute(queryOraTypesAndEnd)
-				let comingCount = await oraConn.execute(queryComingCount)
-				let leaveCount = await oraConn.execute(queryLeaveCount)
-				
-				oraConn.close()
+				let typesAndCountStart = await client.query(queryOraTypesAndCountStart)
+				let typesAndCountEnd = await client.query(queryOraTypesAndEnd)
+				let comingCount = await client.query(queryComingCount)
+				let leaveCount = await client.query(queryLeaveCount)
 				
 				const meterCountMap = new Map()
 				
@@ -178,6 +142,8 @@ module.exports = class ReportsStorageApi {
 				apiRes.status(200).send(Object.fromEntries(meterCountMap))
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 		
@@ -192,18 +158,8 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { location, startDate, endDate } = apiReq.body
-			const oraConn = await getOraConnectionUit()
-			
-			try {
-				const queryOra = getQueryLogsBy({ location }, startDate, endDate)
-				
-				const { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
-				
-				apiRes.status(200).send(rows)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
-			}
+			const query = getQueryLogsBy({ location }, startDate, endDate)
+			executePGIQuery(query, apiRes)
 		})
 		
 		app.post(`/api/${ module_name }/get-storage-logs-by-emp-report`, async (apiReq, apiRes) => {
@@ -217,18 +173,8 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { empStaffId, startDate, endDate } = apiReq.body
-			const oraConn = await getOraConnectionUit()
-			
-			try {
-				const queryOra = getQueryLogsBy({ empStaffId }, startDate, endDate)
-				
-				let { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
-				
-				apiRes.status(200).send(rows)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
-			}
+			const query = getQueryLogsBy({ empStaffId }, startDate, endDate)
+			executePGIQuery(query, apiRes)
 		})
 		
 		app.post(`/api/${ module_name }/get-storage-group-logs-by-emp-report`, async (apiReq, apiRes) => {
@@ -242,41 +188,40 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { empStaffId, startDate, endDate } = apiReq.body
-			const oraConn = await getOraConnectionUit()
+			const client = await pgPool.connect()
 			
 			try {
-				const queryOra =
+				const query =
 					"select meter.meter_type as type, meter_log.oper_type, " +
 					"to_char(meter_log.datetime, 'dd.mm.yyyy') as datetime, " +
 					"meter_log.issuing_person, meter_log.accepted_person " +
 					"from meter, meter_log " +
 					"where meter_log.meter_guid = meter.guid " +
-					`and meter_log.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
-					`and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
+					`and meter_log.datetime between '${ startDate }' ` +
+					`and '${ endDate }' ` +
 					`and (meter_log.issuing_person = ${ empStaffId } or meter_log.accepted_person = ${ empStaffId }) ` +
 					"order by meter.meter_type, meter.serial_number, meter_log.datetime"
 				
-				let { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
+				let { rows } = await client.query(query)
 				
 				const data = rows.reduce((acc, row) => {
 					const findedRow = acc.find(
 						groupRow =>
-							groupRow.date === row.DATETIME &&
-							groupRow.acceptedPerson === row.ACCEPTED_PERSON &&
-							groupRow.issuingPerson === row.ISSUING_PERSON &&
-							groupRow.type === row.TYPE &&
-							groupRow.operationType === row.OPER_TYPE
+							groupRow.date === row.datetime &&
+							groupRow.acceptedPerson === row.accepted_person &&
+							groupRow.issuingPerson === row.issuing_person &&
+							groupRow.type === row.type &&
+							groupRow.operationType === row.oper_type
 					)
 					
 					if (!findedRow) {
 						acc.push({
-							date: row.DATETIME,
-							type: row.TYPE,
+							date: row.datetime,
+							type: row.type,
 							count: 1,
-							operationType: row.OPER_TYPE,
-							issuingPerson: row.ISSUING_PERSON,
-							acceptedPerson: row.ACCEPTED_PERSON
+							operationType: row.oper_type,
+							issuingPerson: row.issuing_person,
+							acceptedPerson: row.accepted_person
 						})
 					} else {
 						findedRow.count += 1
@@ -288,6 +233,8 @@ module.exports = class ReportsStorageApi {
 				apiRes.status(200).send(data)
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 		
@@ -302,49 +249,50 @@ module.exports = class ReportsStorageApi {
 			}
 			
 			const { location, startDate, endDate } = apiReq.body
-			const oraConn = await getOraConnectionUit()
+			const client = await pgPool.connect()
 			
 			try {
-				const queryOra =
+				const query =
 					"select m.meter_type, m.serial_number, " +
 					"to_char(ml.datetime, 'dd.mm.yyyy hh24:mi:ss') as datetime, " +
 					"ml.issuing_person, ml.accepted_person, ml.comment_field from meter m, meter_log ml " +
 					`where m.meter_location = ${ location } and m.guid = ml.meter_guid ` +
-					`and ml.datetime between TO_DATE('${ startDate } 00:00', 'dd.mm.yyyy hh24:mi:ss') ` +
-					`and TO_DATE('${ endDate } 23:59', 'dd.mm.yyyy hh24:mi:ss') order by datetime`
+					`and ml.datetime between '${ startDate } 00:00:00' ` +
+					`and '${ endDate } 23:59:00' order by datetime`
 				
-				const { rows } = await oraConn.execute(queryOra)
-				oraConn.close()
+				const { rows } = await client.query(query)
 				
 				const meterMap = new Map()
 				rows.forEach((row) => {
-					if (!meterMap.get(row.SERIAL_NUMBER))
-						meterMap.set(row.SERIAL_NUMBER, [ row ])
+					if (!meterMap.get(row.serial_number))
+						meterMap.set(row.serial_number, [ row ])
 					else {
-						const logs = meterMap.get(row.SERIAL_NUMBER)
+						const logs = meterMap.get(row.serial_number)
 						logs.push(row)
-						meterMap.set(row.SERIAL_NUMBER, logs)
+						meterMap.set(row.serial_number, logs)
 					}
 				})
 				
 				const data = []
 				for (const entry of meterMap.entries()) {
-					let logs = entry[1].sort((a, b) => (new Date(b.DATETIME)).getTime() - (new Date(a.DATETIME)).getTime())
+					let logs = entry[1].sort((a, b) => (new Date(b.datetime)).getTime() - (new Date(a.datetime)).getTime())
 					let serialNumber = entry[0]
 					let firstLog = logs[0]
 					data.push({
-						type: firstLog.METER_TYPE,
+						type: firstLog.meter_type,
 						serialNumber,
-						date: firstLog.DATETIME,
-						issuingPerson: firstLog.ISSUING_PERSON,
-						acceptedPerson: firstLog.ACCEPTED_PERSON,
-						comment: firstLog.COMMENT_FIELD
+						date: firstLog.datetime,
+						issuingPerson: firstLog.issuing_person,
+						acceptedPerson: firstLog.accepted_person,
+						comment: firstLog.comment_field
 					})
 				}
 				
 				apiRes.status(200).send(data)
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 		
@@ -356,41 +304,41 @@ module.exports = class ReportsStorageApi {
 			const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
 														"Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь" ]
 			
-			const oraConn = await getOraConnectionUit()
+			
 			const today = new Date()
 			const currentYear = today.getFullYear()
 			const meterTypeMap = new Map()
+			const client = await pgPool.connect()
 			
 			try {
 				for (const month of months) {
 					let monthNumber = months.indexOf(month) + 1
 					let date = new Date(currentYear, monthNumber, 0)
-					let startDate = `1.${ monthNumber }.${ currentYear } 00:00`
-					let endDate = `${ date.getDate() }.${ monthNumber }.${ currentYear } 23:59`
+					let startDate = `${ currentYear }-${ monthNumber }-1 00:00`
+					let endDate = `${ currentYear }-${ monthNumber }-${ date.getDate() } 23:59`
 				
-					const queryOra =
-						"select type, count(statusOK) as ok, count(statusNotOk) as break " +
+					const query =
+						"select x.type, count(x.statusOK) as ok, count(x.statusNotOk) as break " +
 							"from (select meter.meter_type as type, st1.status as statusOK, st2.status as statusNotOk " +
 							"from meter right join meter_log on meter.guid = meter_log.meter_guid " +
 							"full outer join meter_work_status st1 on st1.log_id = meter_log.id and st1.status = 1 " +
-							`and st1.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi') and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi') ` +
+							`and st1.datetime between '${ startDate }' and '${ endDate }' ` +
 							"full outer join meter_work_status st2 on st2.log_id = meter_log.id and st2.status = 0 " +
-							`and st2.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi') and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi') ` +
-							"where meter_log.oper_type = 1) group by type order by type"
+							`and st2.datetime between '${ startDate }' and '${ endDate }' ` +
+							"where meter_log.oper_type = 1) as x group by type order by type"
 					
-					const { rows } = await oraConn.execute(queryOra)
-					
+					const { rows } = await client.query(query)
 					
 					for (const row of rows) {
 						let results = []
 						const meterMonthMap = new Map()
 						
-						if (row.OK !== 0 || row.BREAK !== 0) {
-							meterMonthMap.set(monthNumber, { OK : row.OK, BREAK : row.BREAK})
+						if (row.ok !== 0 || row.break !== 0) {
+							meterMonthMap.set(monthNumber, { ok : row.ok, break : row.break})
 						}
 				
-						if (meterTypeMap.has(row.TYPE)) {
-							const monthArr = meterTypeMap.get(row.TYPE)
+						if (meterTypeMap.has(row.type)) {
+							const monthArr = meterTypeMap.get(row.type)
 							monthArr.push(meterMonthMap)
 							results = monthArr
 						} else {
@@ -399,12 +347,10 @@ module.exports = class ReportsStorageApi {
 							}
 						}
 						if (results.length) {
-							meterTypeMap.set(row.TYPE, results)
+							meterTypeMap.set(row.type, results)
 						}
 					}
 				}
-				
-				oraConn.close()
 				
 				let records = []
 				let data = []
@@ -423,9 +369,9 @@ module.exports = class ReportsStorageApi {
 						for (let j = 0; j < monthArr.length; j++) {
 							if (monthArr[j].has(i)) {
 								infoFind = true
-								record.push(parseInt(monthArr[j].get(i).OK))
-								record.push(parseInt(monthArr[j].get(i).BREAK))
-								row.push([ parseInt(monthArr[j].get(i).OK), parseInt(monthArr[j].get(i).BREAK) ])
+								record.push(parseInt(monthArr[j].get(i).ok))
+								record.push(parseInt(monthArr[j].get(i).break))
+								row.push([ parseInt(monthArr[j].get(i).ok), parseInt(monthArr[j].get(i).break) ])
 							}
 						}
 						if (!infoFind) {
@@ -476,6 +422,8 @@ module.exports = class ReportsStorageApi {
 				apiRes.status(200).send(data)
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 		
@@ -484,53 +432,51 @@ module.exports = class ReportsStorageApi {
 				return
 			}
 			const materialMap = new Map()
-			const oraConn = await getOraConnectionUit()
+			const client = await pgPool.connect()
 			
 			try {
-				const yearSpentQueryOra =
+				const yearSpentQuery =
 					"select item_id, sum(amount) as amount " +
 					"from meter_spent_item " +
 					"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
-					`and datetime >= TO_DATE('01.01.${ (new Date()).getFullYear() }  00:01', 'dd.mm.yyyy hh24:mi') ` +
+					`and datetime >= '01.01.${ (new Date()).getFullYear() }  00:01'  ` +
 					"group by item_id order by item_id"
 				
-				const yearMaterialSpent = await oraConn.execute(yearSpentQueryOra)
+				const yearMaterialSpent = await client.query(yearSpentQuery)
 				for (const row of yearMaterialSpent.rows) {
-					materialMap.set(row.ITEM_ID, { spentYearAmount : row.AMOUNT })
+					materialMap.set(row.item_id, { spentYearAmount : row.amount })
 				}
 			
-				const totalSpentQueryOra =
+				const totalSpentQuery =
 					"select item_id, sum(amount) as amount " +
 					"from meter_spent_item " +
 					"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
 					"group by item_id order by item_id"
 				
-				const totalMaterialSpent = await oraConn.execute(totalSpentQueryOra)
+				const totalMaterialSpent = await client.query(totalSpentQuery)
 				for (const row of totalMaterialSpent.rows) {
-					if (materialMap.has(row.ITEM_ID)) {
-						materialMap.get(row.ITEM_ID).spentAmount = row.AMOUNT
+					if (materialMap.has(row.item_id)) {
+						materialMap.get(row.item_id).spentAmount = row.amount
 					} else {
-						materialMap.set(row.ITEM_ID, { spentAmount: row.AMOUNT })
+						materialMap.set(row.item_id, { spentAmount: row.amount })
 					}
 				}
 				
-				const storageQueryOra =
+				const storageQuery =
 					"select item_id, sum(amount) as amount " +
 					"from meter_item_storage " +
 					"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
 					"group by item_id order by item_id"
 				
-				const storageMaterial = await oraConn.execute(storageQueryOra)
+				const storageMaterial = await client.query(storageQuery)
 				for (const row of storageMaterial.rows) {
-					if (materialMap.has(row.ITEM_ID)) {
-						materialMap.get(row.ITEM_ID).storageAmount = row.AMOUNT
+					if (materialMap.has(row.item_id)) {
+						materialMap.get(row.item_id).storageAmount = row.amount
 					} else {
-						materialMap.set(row.ITEM_ID, { storageAmount: row.AMOUNT })
+						materialMap.set(row.item_id, { storageAmount: row.amount })
 					}
 				}
 			
-				oraConn.close()
-				
 				const data = []
 				for (let entry of materialMap) {
 					const amount =  entry[1]
@@ -550,6 +496,8 @@ module.exports = class ReportsStorageApi {
 				apiRes.status(200).send(data)
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
+			} finally {
+				client.release()
 			}
 		})
 	}
@@ -569,8 +517,8 @@ function getQueryLogsBy({ location, empStaffId }, startDate, endDate) {
 		"meter_log.issuing_person, meter_log.accepted_person, meter_log.comment_field  " +
 		"from meter, meter_log " +
 		"where meter_log.meter_guid = meter.guid " +
-		`and meter_log.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
-		`and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
+		`and meter_log.datetime between '${ startDate }' ` +
+		`and '${ endDate }' ` +
 		`${ sqlPart } ` +
 		"order by meter.meter_type, meter.serial_number, meter_log.datetime"
 }
@@ -588,7 +536,7 @@ function getQueryStartOrEndCount({ startDate, endDate }, { empStaffId, operation
 		"(select max(meter_log.datetime) as lastlogtime, meter.guid as guid " +
 		"from meter, meter_log " +
 		"where meter_log.meter_guid = meter.guid " +
-		`and meter_log.datetime < TO_DATE('${ startDate ? startDate : endDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
+		`and meter_log.datetime < '${ startDate ? startDate : endDate }' ` +
 		"group by meter.guid) a, meter_log, meter " +
 		"where meter_log.datetime = a.lastlogtime " +
 		"and meter_log.meter_guid = a.guid " +
@@ -613,8 +561,8 @@ function getQueryComingCount({ location, empStaffId }, startDate, endDate) {
 		`${sqlPart} ` +
 		"and meter.guid = meter_log.meter_guid " +
 		`${ sqlPart2 } ` +
-		`and meter_log.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
-		`and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
+		`and meter_log.datetime between '${ startDate }' ` +
+		`and '${ endDate }' ` +
 		"group by meter.meter_type"
 }
 
@@ -633,19 +581,19 @@ function getQueryLeaveCount({ location, empStaffId }, startDate, endDate) {
 		`${ sqlPart } ` +
 		"and meter.guid = meter_log.meter_guid " +
 		`${ sqlPart2 } ` +
-		`and meter_log.datetime between TO_DATE('${ startDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
-		`and TO_DATE('${ endDate }', 'dd.mm.yyyy hh24:mi:ss') ` +
+		`and meter_log.datetime between '${ startDate }' ` +
+		`and '${ endDate }' ` +
 		"group by meter.meter_type"
 }
 
 function fillMeterCountMap(map, field, queryRows) {
 	for (const row of queryRows) {
-		if (map.has(row.TYPE)) {
-			map.get(row.TYPE)[ field ] = row.COUNT
+		if (map.has(row.type)) {
+			map.get(row.type)[ field ] = row.count
 		} else {
 			const count = {}
-			count[ field ] = row.COUNT
-			map.set(row.TYPE, count)
+			count[ field ] = row.count
+			map.set(row.type, count)
 		}
 	}
 }

@@ -1,10 +1,10 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection"),
-	{ getOraConnectionUit, getOraConnectionCnt } = require("../database/oracle/oracle-db-connection"),
-	{ pgStekASDPool } = require("../database/postgres/postgres-stek-asd-db-connection"),
-	{ showRequestInfoAndTime, joi, executePGIQuery, executeOraQuery } = require('../utils'),
-	{ checkAuth } = require('../login/login-api'),
-	module_name = 'reports',
-	ReportsStorageApi = require('./modules/storage-api')
+{ getOraConnectionCnt } = require("../database/oracle/oracle-db-connection"),
+{ pgStekASDPool } = require("../database/postgres/postgres-stek-asd-db-connection"),
+{ showRequestInfoAndTime, joi, executePGIQuery } = require('../utils'),
+{ checkAuth } = require('../login/login-api'),
+module_name = 'reports',
+ReportsStorageApi = require('./modules/storage-api')
 
 module.exports = class ReportsApi {
 	constructor(app) {
@@ -13,7 +13,9 @@ module.exports = class ReportsApi {
 		app.get(`/api/${ module_name }/alpha-last-time-data-report`, async (apiReq, apiRes) => {
 			showRequestInfoAndTime(`Отчеты: запрос на отчет альфа центра по последнему опросу`)
 			
-			if (!checkAuth(apiReq, apiRes)) return
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
 			
 			const oraConn = await getOraConnectionCnt()
 			const query = `SELECT d.n_sh SerialNo ,(Select Name_typ from spr_sh where d.typ_sh=spr_sh.typ_sh) DevType,
@@ -102,7 +104,9 @@ module.exports = class ReportsApi {
 			
 			showRequestInfoAndTime(`Отчеты: запрос на данные по выполнению плана по месяцам (дома)`)
 			
-			if (!checkAuth(apiReq, apiRes)) return
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
 			
 			let firstDateOfYear = `${ (new Date()).getFullYear() }-01-01`
 			
@@ -114,11 +118,10 @@ module.exports = class ReportsApi {
 								  from meters where customer_address like '%${ planItem.address }%'
 								  and loaded > '${ firstDateOfYear }'
 								  group by date_trunc('month', loaded)
-								  order by date_trunc('month', loaded);`
-						//console.log(query)
+								  order by date_trunc('month', loaded)`
+					
 						return client.query(query).then(
 							result => {
-								//console.log(result.rows)
 								return { address: planItem.address, data: result.rows }
 							},
 						);
@@ -145,7 +148,7 @@ module.exports = class ReportsApi {
 			
 			if (!checkAuth(apiReq, apiRes)) return
 			
-			const oraConn = await getOraConnectionUit()
+			const client = await pgPool.connect()
 			//получение всех счетчиков которые находятся в данный момент на складе, с операцией выдача на программирование
 			const query = `select m.serial_number
 								from meter m, meter_log l
@@ -154,110 +157,67 @@ module.exports = class ReportsApi {
 								and l.old_location = 9
 								and l.new_location = 0`
 			
-			oraConn.execute(query).then(
-				resolve => {
-					console.log(`Количество счетчиков для поиска ${ resolve.rows.length }`)
-					//получение всех логов данного счетчика и выбор последних двух логов
-					return Promise.all(resolve.rows.map(row =>
-						oraConn
-							.execute(`select * from meter_log
-				                      where meter_serial_number = '${ row.SERIAL_NUMBER }'
-				                      and rownum <= 2 order by id desc`)
-							.then(result => result.rows)
-					))
-				}
-			).then(
-				resolve => {
-					//если последние два лога операции выдачи на программирование и прием на склад
-					//console.log(resolve)
-					let resolveFiltered = resolve
-						.filter(logs => logs[0].OPER_TYPE === 9 && logs[1].OPER_TYPE === 12)
-						.map(logs => { return { serialNumber: logs[1].METER_SERIAL_NUMBER, date: logs[1].DATETIME }})
-					
-					console.log(`Количество найденных для отчета счетчиков ${ resolveFiltered.length }`)
-					
-					return Promise.all(resolveFiltered.map(meter => {
-						const query = `select m.serial_number, m.meter_type, t.type_name from meter m, meter_type t
-						                where m.serial_number = '${ meter.serialNumber }' and m.meter_type = t.type_index`
-						//console.log(query)
-						return oraConn.execute(query).then(
-							result => {
-								return { ...result.rows[0], date: meter.date }
-							}
-						)
-					}))
-				}
-			).then(
-				resolve => {
-					oraConn.close()
-					apiRes.status(200).send(resolve)
-				}
-			).catch(
-				error => {
-					oraConn.close()
-					console.log(`Ошибка: ${ error }`)
-					const message = error.message === undefined ? error.routine : error.message
-					return apiRes.status(400).send(message)
-				}
-			)
-		
-			
+			try {
+				const { rows } = await client.query(query)
+				
+				const logs = await Promise.all(rows.map(row =>
+					client.query(`select * from meter_log where meter_serial_number = '${ row.serial_number }' ` +
+			                      "order by id desc limit 2").then(result => result.rows)
+				))
+				
+				let filteredLogs = logs
+					.filter(logs => logs[0].oper_type === 9 && logs[1].oper_type === 12)
+					.map(logs => ({ serialNumber: logs[1].meter_serial_number, date: logs[1].datetime }))
+				
+				console.log(filteredLogs)
+				const meters = await Promise.all(filteredLogs.map((meter) =>
+					client
+						.query("select m.serial_number, m.meter_type, t.type_name from meter m, meter_storage_type t " +
+					              `where m.serial_number = '${ meter.serialNumber }' and m.meter_type = t.id`)
+						.then(result => ({ ...result.rows[0], date: meter.date }))
+						  
+				))
+				apiRes.status(200).send(meters)
+			} catch (e) {
+				apiRes.status(400).send(e.message || e.detail)
+			} finally {
+				client.release()
+			}
 		})
 		
 		app.get(`/api/${ module_name }/get-meter-not-loaded-in-pyramid`, async (apiReq, apiRes) => {
 			
 			showRequestInfoAndTime(`Отчеты: запрос на данные по не загруженным счетчикам в пирамиду`)
 			
-			if (!checkAuth(apiReq, apiRes)) return
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
 			
-			const query = `select m.serial_number, t.name, m.address,
+			const client = await pgPool.connect()
+			
+			try {
+				const query = `select m.serial_number, t.name, m.address,
 			                m.phone, m.created from meters m, meter_type t
 			                where in_pyramid = 0 and t.id = m.type order by t.name limit 1000`
-			
-			const oraConn = await getOraConnectionUit()
-			
-			pgPool.connect((connErr, client, done) => {
-				if (connErr) apiRes.status(400).send(connErr.detail)
+				const { rows } = await client.query(query)
+				if (!rows.length) {
+					return apiRes.status(400).send('Список не загруженных в пирамиду счетчиков пуст')
+				}
 				
-				client.query(query).then(
-					resolve => {
-						if (!resolve.rows.length)
-							return apiRes.status(400).send('Список не загруженных в пирамиду счетчиков пуст')
-						
-						const strSerNumbers = resolve.rows.map(row => `'${ row.serial_number}'`).join(',')
-						//console.log(strSerNumbers.length)
-						
-						const query = `select serial_number from meter where serial_number in (${ strSerNumbers })
-										and meter_location = 0 and current_owner = 12730`
-						
-						console.log(query)
-						
-						return { query: oraConn.execute(query), data: resolve.rows }
-					})
-				.then(
-					async resolve => {
-						const queryResult = await resolve.query
-						console.log(queryResult)
-						
-						const storageMeters = queryResult.rows.flat()
-						//console.log(storageMeters)
-						
-						const finalResult = resolve.data.map(row => {
-							let inStorage = storageMeters.includes(parseInt(row.serial_number))
-							return { ...row, inStorage }
-						})
-						done()
-						apiRes.send(finalResult)
-					}
-				).catch(
-					error => {
-						done()
-						console.log(`Ошибка: ${ error }`);
-						const message = error.message === undefined ? error.routine : error.message
-						apiRes.status(400).send(message)
-					}
-				)
-			})
+				const strSerNumbers = rows.map(row => `'${ row.serial_number}'`).join(',')
+				
+				const serialQuery = `select serial_number from meter where serial_number in (${ strSerNumbers })
+															and meter_location = 0 and current_owner = 12730`
+				
+				const meters = await client.query(serialQuery)
+				const storageMeters = meters.rows.flat().map((meter) => meter.serial_number)
+				const data = rows.map(row => ({ ...row, inStorage: storageMeters.includes(row.serial_number) }))
+				apiRes.send(data)
+			} catch (e) {
+				apiRes.status(400).send(e.message || e.detail)
+			} finally {
+				client.release()
+			}
 		})
 		
 		app.get(`/api/${ module_name }/get-non-active-meters-from-pyramid/:days`, (apiReq, apiRes) => {
@@ -389,7 +349,9 @@ module.exports = class ReportsApi {
 			
 			showRequestInfoAndTime(`Отчеты: запрос на данные сгруппированные по принадлежности и месяцу`)
 			
-			if (!checkAuth(apiReq, apiRes)) return
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
 			
 			let time = apiReq.params.created === '0' ? 'created' : 'loaded', queryParam = ''
 			if (time === 'loaded') queryParam = 'in_pyramid = 1 and '
@@ -400,7 +362,6 @@ module.exports = class ReportsApi {
 			const query = `select count(*), address, date_trunc('month', ${ time }) "month"
 			                            from meters where ${ queryParam }${ time } > '${ firstDateOfYear }'
                                         group by month, address order by month`
-			//console.log(query)
 			
 			pgPool.connect((connErr, client, done) => {
 				if (connErr) apiRes.status(400).send(connErr.detail)
@@ -441,47 +402,39 @@ module.exports = class ReportsApi {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
+			const client = await pgPool.connect()
 			
 			try {
-				const queryOra = `select serial_number from meter where meter_type = 117`
-				
-				const oraConn = await getOraConnectionUit()
-				let response = await oraConn.execute(queryOra)
-				oraConn.close()
-				const storageMeters = response.rows
-				
-				const client = await pgPool.connect()
-				response = await client.query(`select serial_number, port, ip_address from meters where type = 30 order by port`)
-				client.release()
-				const programmingMeters = response.rows
+				let { rows } = await client.query(`select serial_number from meter where meter_type = 117`	)
+				const meterInfo = await client.query(`select serial_number, port, ip_address from meters where type = 30 order by port`)
+				const programmingMeters = meterInfo.rows
 				
 				if (!programmingMeters.length) {
 					return apiRes.status(400).send('не найдено счетчиков Ротек на складе')
 				}
-				
-				const [ lastMeter ] =  programmingMeters.slice(-1)
-				
+				const [ lastMeter ] = programmingMeters.slice(-1)
 				let portIncVal = 0
-				const totalMeters = storageMeters.map((storageMeter) => {
-					const meter = programmingMeters.find((progMeter) =>
-						 progMeter.serial_number === storageMeter.SERIAL_NUMBER)
+				const totalMeters = rows.map((storageMeter) => {
+					const meter = programmingMeters
+						.find((progMeter) =>	progMeter.serial_number === storageMeter.serial_number)
 					
-					if (meter) {
-						return meter
-					} else {
+					if (!meter) {
 						portIncVal++
 						return {
-							serial_number: storageMeter.SERIAL_NUMBER,
+							serial_number: storageMeter.serial_number,
 							port: lastMeter.port + portIncVal,
 							ip_address: lastMeter.ip_address,
 							new: true
 						}
 					}
+					return meter
 				})
 				
 				apiRes.status(200).send(totalMeters)
-			} catch ({ message }) {
-				return apiRes.status(400).send(message)
+			} catch (e) {
+				return apiRes.status(400).send(e.message)
+			} finally {
+				client.release()
 			}
 		})
 	}
