@@ -77,7 +77,9 @@ module.exports = class MeterStorageApi {
 		
 		app.post(`/api/${ module_name }/filter`, async (apiReq, apiRes) => {
 			const { error } = _validateFilters(apiReq.body)
-			if (error) return apiRes.status(400).send(error.details[0].message)
+			if (error) {
+				return apiRes.status(400).send(error.details[0].message)
+			}
 			
 			if (!checkAuth(apiReq, apiRes)) {
 				return
@@ -174,7 +176,30 @@ module.exports = class MeterStorageApi {
 			
 			executePGIQuery(`select id, barcode_thrue_index as parse_option from meter_mnf`, apiRes)
 		})
+		
+		app.post(`/api/${ module_name }/edit-log-comment`, async (apiReq, apiRes) => {
+			const { error } = _validateEditComment(apiReq.body)
+			if (error) {
+				return apiRes.status(400).send(error.details[0].message)
+			}
+			
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
+			
+			const { comment, logId } = apiReq.body
+			const query = `update meter_log set comment_field = '${ comment }' where id = ${ logId }`
+			executePGIQuery(query, apiRes)
+		})
 	}
+}
+
+function _validateEditComment(meter) {
+	const schema = {
+		logId: joi.number().required(),
+		comment: joi.string().empty('').allow(null)
+	}
+	return joi.validate(meter, schema)
 }
 
 function _validateFilters(meter) {

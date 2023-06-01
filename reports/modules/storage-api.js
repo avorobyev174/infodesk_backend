@@ -318,7 +318,7 @@ module.exports = class ReportsStorageApi {
 					let endDate = `${ currentYear }-${ monthNumber }-${ date.getDate() } 23:59`
 				
 					const query =
-						"select x.type, count(x.statusOK) as ok, count(x.statusNotOk) as break " +
+						"select x.type, count(x.statusOK) as repaired, count(x.statusNotOk) as broken " +
 							"from (select meter.meter_type as type, st1.status as statusOK, st2.status as statusNotOk " +
 							"from meter right join meter_log on meter.guid = meter_log.meter_guid " +
 							"full outer join meter_work_status st1 on st1.log_id = meter_log.id and st1.status = 1 " +
@@ -330,48 +330,54 @@ module.exports = class ReportsStorageApi {
 					const { rows } = await client.query(query)
 					
 					for (const row of rows) {
-						let results = []
+						let finalMonthMapArray = []
 						const meterMonthMap = new Map()
 						
-						if (row.ok !== 0 || row.break !== 0) {
-							meterMonthMap.set(monthNumber, { ok : row.ok, break : row.break})
+						if (row.repaired || row.broken ) {
+							meterMonthMap.set(monthNumber, { repaired : row.repaired, broken : row.broken })
 						}
 				
 						if (meterTypeMap.has(row.type)) {
-							const monthArr = meterTypeMap.get(row.type)
-							monthArr.push(meterMonthMap)
-							results = monthArr
+							const monthMapArray = meterTypeMap.get(row.type)
+							monthMapArray.push(meterMonthMap)
+							finalMonthMapArray = monthMapArray
 						} else {
 							if (meterMonthMap.size) {
-								results.push(meterMonthMap)
+								finalMonthMapArray.push(meterMonthMap)
 							}
 						}
-						if (results.length) {
-							meterTypeMap.set(row.type, results)
+						
+						if (finalMonthMapArray.length) {
+							meterTypeMap.set(row.type, finalMonthMapArray)
 						}
 					}
 				}
 				
-				let records = []
+				
 				let data = []
+				let records = []
+				
 				for (let entry of meterTypeMap) {
-					if (!entry[0]) {
+					const [ meterType, monthMapArray ] = entry
+					if (!meterType) {
 						continue
 					}
 					
 					let record = []
 					let row = []
-					row.push(entry[0])
+					row.push(meterType)
 					
 					for (let i = 1; i <= today.getMonth() + 1; i++) {
-						let monthArr = entry[1]
 						let infoFind = false
-						for (let j = 0; j < monthArr.length; j++) {
-							if (monthArr[j].has(i)) {
+						for (let j = 0; j < monthMapArray.length; j++) {
+							if (monthMapArray[j].has(i)) {
 								infoFind = true
-								record.push(parseInt(monthArr[j].get(i).ok))
-								record.push(parseInt(monthArr[j].get(i).break))
-								row.push([ parseInt(monthArr[j].get(i).ok), parseInt(monthArr[j].get(i).break) ])
+								record.push(parseInt(monthMapArray[j].get(i).repaired))
+								record.push(parseInt(monthMapArray[j].get(i).broken))
+								row.push([
+									parseInt(monthMapArray[j].get(i).repaired),
+									parseInt(monthMapArray[j].get(i).broken)
+								])
 							}
 						}
 						if (!infoFind) {
@@ -381,15 +387,20 @@ module.exports = class ReportsStorageApi {
 						}
 					}
 					
-					let sumOk = 0, sumBreak = 0
+					let sumRepaired = 0
+					let sumBroken = 0
 					for (let i = 0; i < record.length; i++) {
-						i % 2 === 0 ? sumOk += record[i] : sumBreak += record[i]
+						i % 2 === 0 ? sumRepaired += record[i] : sumBroken += record[i]
 					}
-					row.push([ sumOk, sumBreak ])
 					
-					const sum = sumBreak/(sumBreak + sumOk) * 100
+					row.push([ sumRepaired, sumBroken ])
+					
+					const sum = sumBroken/(sumBroken + sumRepaired) * 100
 					row.push(isNaN(sum) || sum === 0 ? '0%' : sum.toFixed(2) + '%')
 					
+					if (!sumRepaired && !sumBroken) {
+						continue
+					}
 					records.push(record)
 					data.push(row)
 				}
@@ -420,6 +431,7 @@ module.exports = class ReportsStorageApi {
 				data.push(row)
 				
 				apiRes.status(200).send(data)
+				
 			} catch ({ message }) {
 				return apiRes.status(400).send(message)
 			} finally {
@@ -476,19 +488,19 @@ module.exports = class ReportsStorageApi {
 						materialMap.set(row.item_id, { storageAmount: row.amount })
 					}
 				}
-			
+				
 				const data = []
-				for (let entry of materialMap) {
-					const amount =  entry[1]
-					let { storageAmount } = amount
-					storageAmount = storageAmount ? storageAmount : 0
-					const { spentYearAmount } = amount
-					const { spentAmount } = amount
+				for (const entry of materialMap) {
+					const [itemId, amount ] = entry
+					let { spentAmount, storageAmount, spentYearAmount } = amount
+					spentAmount = spentAmount || 0
+					storageAmount = storageAmount || 0
+					spentYearAmount = spentYearAmount || 0
 					const totalAmount = storageAmount - spentAmount
 					
 					data.push([
-						entry[0],
-						spentYearAmount ? spentYearAmount : 0,
+						itemId,
+						spentYearAmount,
 						totalAmount
 					])
 				}

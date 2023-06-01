@@ -73,7 +73,8 @@ module.exports = class MeterRegistrationApi {
                                             ip_address,
                                             parent_id,
                                             gateway,
-                                            author_acc_id)
+                                            author_acc_id,
+                                            kftt)
                                         values (
                                             '${ apiReq.body.serialNumber }',
                                             ${ apiReq.body.type },
@@ -87,7 +88,8 @@ module.exports = class MeterRegistrationApi {
                                             '${ apiReq.body.ipAddress }',
                                             ${ parentId },
                                             ${ gateway },
-                                            ${ authResult.id }
+                                            ${ authResult.id },
+                                            1
                                         ) returning *`
     
             executePGIQuery(query, apiRes)
