@@ -4,6 +4,12 @@ const { showRequestInfoAndTime, joi, getDateTime, executePGIQuery  } = require('
 
 module.exports = class acceptOrIssueApi {
 	constructor(app, module_name) {
+		const REPAIR_OPERATION = 1
+		const REGISTER_OPERATION = 7
+		const STORAGE_LOCATION = 0
+		const REPAIR_LOCATION = 1
+		const SECOND_STORAGE_LOCATION = 7
+		
 		app.post(`/api/${ module_name }/check-meter`, (apiReq, apiRes) => {
 			
 			const { error } = _validateCheckMeter(apiReq.body)
@@ -38,6 +44,7 @@ module.exports = class acceptOrIssueApi {
 				accuracyClass,
 				condition,
 				issuingPersonStaffId,
+				storageType,
 				interval,
 				owner,
 				calibration,
@@ -47,8 +54,10 @@ module.exports = class acceptOrIssueApi {
 			} = apiReq.body
 			
 			const calibrationDate = !calibration ? null : `to_date('${ calibration }', 'DD.MM.YYYY')`
-			const operationType = isRouter ? 1 : 7
-			const meterLocation = isRouter ? 1 : 0
+			const operationType = isRouter ? REPAIR_OPERATION : REGISTER_OPERATION
+			const meterLocation = isRouter
+				? REPAIR_LOCATION
+				: storageType ? SECOND_STORAGE_LOCATION : STORAGE_LOCATION
 			
 			const client = await pgPool.connect()
 			const results = []
@@ -188,7 +197,7 @@ module.exports = class acceptOrIssueApi {
 					const query = `update meter set meter_location = ${ newLocation },
 					               current_owner = ${ acceptedPersonStaffId }
 					               where guid = '${ meter.guid }' returning *`
-					
+					const { oldLocation } = meters[0]
 					const queryLog = "insert into meter_log (meter_guid,meter_serial_number, oper_type, issuing_person, " +
 						"accepted_person, datetime, comment_field, old_location, new_location)  " +
 						`values (
@@ -294,6 +303,7 @@ function _validateRegisterMeter(meter) {
 		comment: joi.string().empty(''),
 		passportNumber: joi.number(),
 		isRouter: joi.boolean(),
+		storageType: joi.number().required(),
 	}
 	return joi.validate(meter, schema);
 }
