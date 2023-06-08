@@ -96,8 +96,15 @@ module.exports = class MeterStorageApi {
 				desc = 'desc'
 			}
 			
+			
 			if (serialNumber) {
-				filters.push(`serial_number like '%${ serialNumber }%'`)
+				const serNumber = serialNumber.trim()
+				const serialNumbers = serNumber.split(' ').map((serialNumber) => `'${ serialNumber }'`)
+				if (serialNumbers.length > 1) {
+					filters.push(`serial_number in (${ serialNumbers.join(',') })`)
+				} else {
+					filters.push(`serial_number like '%${ serNumber }%'`)
+				}
 			}
 			
 			if (types && types.length) {

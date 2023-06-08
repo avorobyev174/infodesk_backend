@@ -512,6 +512,27 @@ module.exports = class ReportsStorageApi {
 				client.release()
 			}
 		})
+		
+		app.post(`/api/${ module_name }/get-spent-by-month-report`, async (apiReq, apiRes) => {
+			const { error } = validateStoragePeriodReport(apiReq.body)
+			if (error) {
+				return apiRes.status(400).send(error.details[0].message)
+			}
+			
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
+			
+			const { startDate, endDate } = apiReq.body
+			const query =
+				"select item_id, sum(amount) as amount " +
+				"from meter_spent_item " +
+				"where item_id in (1, 2, 3, 4, 5, 6, 13, 14) " +
+				`and datetime between '${ startDate } 00:00:01' ` +
+				`and '${ endDate } 23:59:00' group by item_id order by item_id`
+			
+			executePGIQuery(query, apiRes)
+		})
 	}
 }
 
