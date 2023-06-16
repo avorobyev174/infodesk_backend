@@ -5,9 +5,11 @@ const ProfileApi = require('./profile/profile-api')
 const SearchApi = require('./search/search-api')
 const TestUtilsApi = require('./test-utils/test-utils-api')
 const ReportsApi = require('./reports/reports-api')
-const MeterStorage = require('./meter_storage/meter-storage-api')
-const MeterRepair = require('./meter_repair/meter-repair-api')
+const MeterStorageApi = require('./meter_storage/meter-storage-api')
+const MeterRepairApi = require('./meter_repair/meter-repair-api')
 const RepairAndMaterials = require('./meter_storage/modules/repair-and-materials')
+const ServiceApi = require('./service/meter-service-api')
+const CommonApi = require('./common/common-api')
 
 function _loadApi(app) {
     new MeterRegistrationApi(app)
@@ -17,9 +19,11 @@ function _loadApi(app) {
     new SearchApi(app)
     new TestUtilsApi(app)
     new ReportsApi(app)
-    new MeterStorage(app)
-    new MeterRepair(app)
+    new MeterStorageApi(app)
+    new MeterRepairApi(app)
     new RepairAndMaterials(app)
+    new ServiceApi(app)
+    new CommonApi(app)
 }
 
 module.exports = {

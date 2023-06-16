@@ -96,9 +96,9 @@ module.exports = class actualizeFromRTCApi {
 			const { error } = _validateActualizeMeter(apiReq.body)
 			if (error) return apiRes.status(400).send(error.details[0].message)
 
-			const smsStatus = [5, 6, 7, 18, 20, 21, 22].includes(apiReq.body.type) ? 7 : 1 //МИРы не требуют смс
+			const smsStatus = [ 139, 143, 105, 144, 140, 141, 142 ].includes(apiReq.body.type) ? 7 : 1 //МИРы не требуют смс
 
-			const query = `update meters set (
+			const query = `update meter_reg set (
                                             phone,
                                             status,
                                             sms_status
@@ -136,7 +136,7 @@ module.exports = class actualizeFromRTCApi {
 			
 			if (!checkAuth(apiReq, apiRes)) return
 			
-			if ([16].includes(type)) {
+			if ([ 107 ].includes(type)) {
 				/*const client = new net.Socket();
 				let successProgramming = true
 				
@@ -258,7 +258,7 @@ module.exports = class actualizeFromRTCApi {
 								messageId = pdu.message_id
 								isConnected = false
 								//session.destroy()
-								const query = `update meters set sms_status = 8, sms_id = ${ messageId } where id = ${ meterId } returning *`
+								const query = `update meter_reg set sms_status = 8, sms_id = ${ messageId } where id = ${ meterId } returning *`
 								executePGIQuery(query, apiRes)
 							}
 						})
@@ -319,7 +319,7 @@ module.exports = class actualizeFromRTCApi {
 					
 					console.log(`Данные распарсены: ид смс = ${ smsId }`)
 					
-					const query = `update meters set
+					const query = `update meter_reg set
                                             (sms_id, sms_status)
                                              =
                                             (${ smsId }, 2)
@@ -360,23 +360,29 @@ module.exports = class actualizeFromRTCApi {
 			
 			if (!checkAuth(apiReq, apiRes)) return
 			
-			if ([16].includes(type)) {
+			if ([ 107 ].includes(type)) {
 				const query = `select "DirectAccessPort" from public."Devices" where "SerialNumber" = '${ serialNumber }'`
 				
 				pgEnergoPool.connect((connErr, client, done) => {
-					if (connErr) apiRes.status(400).send(connErr.detail)
+					if (connErr) {
+						apiRes.status(400).send(connErr.detail)
+					}
 					
 					client
 						.query(query)
 						.then(
 							resolve => {
-								if (!resolve.rows.length)
-									return apiRes.send([{ id: meterId, message: `Счетчик ${ serialNumber } еще не вышел на связь, повторите попытку позже` }])
+								if (!resolve.rows.length) {
+									return apiRes.send([{
+										id: meterId,
+										message: `Счетчик ${serialNumber} еще не вышел на связь, повторите попытку позже`
+									}])
+								}
 								
 								const port = resolve.rows[0].DirectAccessPort
 								//console.log(`port = ${ port }`)
 								if (port) {
-									const query = `update meters set (
+									const query = `update meter_reg set (
 																		sms_status,
 																	    port
 																    ) = (
@@ -448,7 +454,7 @@ module.exports = class actualizeFromRTCApi {
 							return apiRes.status(400).send('Что то пошло не так при запросе статуса смс из кабинета билайн')
 					}
 					
-					const query = `update meters set sms_status = ${ status } where id = ${ meterId } returning *`
+					const query = `update meter_reg set sms_status = ${ status } where id = ${ meterId } returning *`
 					
 					executePGIQuery(query, apiRes)
 				} catch (e) {

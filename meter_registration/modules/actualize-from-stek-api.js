@@ -15,7 +15,7 @@ module.exports = class actualizeFromStekApi {
 			
 			showRequestInfoAndTime(`Регистрация счетчиков: запрос на получение данных из стека`)
 			
-			const query = `select serial_number from meters where personal_account is null`
+			const query = `select serial_number from meter_reg where personal_account is null`
 			
 			pgPool.connect((connErr, client, done) => {
 				if (connErr) {
@@ -85,7 +85,7 @@ module.exports = class actualizeFromStekApi {
 			const type = apiReq.body.customer_type === null ? '' : apiReq.body.customer_type
 			const kftt = apiReq.body.kftt === null ? 1 : apiReq.body.kftt
 			
-			const query = `update meters set (
+			const query = `update meter_reg set (
                                             personal_account,
                                             customer,
                                             customer_address,
@@ -115,7 +115,7 @@ module.exports = class actualizeFromStekApi {
 			
 			showRequestInfoAndTime(`Регистрация счетчиков: запрос на получение данных из стека с id = ${ meterId }`)
 			
-			const query = `select serial_number from meters where id = ${ meterId } and personal_account is null`
+			const query = `select serial_number from meter_reg where id = ${ meterId } and personal_account is null`
 			
 			pgPool.connect((connErr, client, done) => {
 				if (connErr) {
@@ -157,7 +157,7 @@ module.exports = class actualizeFromStekApi {
 											const meterData = resolve.rows.filter(row => parseInt(row.kftt) > 0)[0]
 											console.log('Запрос на получение информации выполнен успешно')
 											console.log(meterData)
-											const updQuery = `update meters set (
+											const updQuery = `update meter_reg set (
 					                                            personal_account,
 					                                            customer,
 					                                            customer_address,

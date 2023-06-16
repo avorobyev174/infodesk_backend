@@ -2,7 +2,7 @@ const { pgPool } = require("../database/postgres/postgres-db-connection")
 const { getDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils')
 const { checkAuth } = require('../login/login-api')
 const module_name = 'meter-repair'
-
+const PROG_METER_TYPES = [ 111, 119, 120 ]
 module.exports = class MeterRepairApi {
 	constructor(app) {
 		//Получение списка счетчиков
@@ -13,7 +13,7 @@ module.exports = class MeterRepairApi {
 			showRequestInfoAndTime('Перепрограммирование счетчиков: запрос на информацию о счетчиках')
 			
 			const query = `select id, type, serial_number, port, ip_address, contact, prog_value
-			                                            from meters where type in (23, 31, 33) order by id`
+			                                            from meter_reg where type in (${ PROG_METER_TYPES.join(',') }) order by id`
 			
 			executePGIQuery(query, apiRes)
 		})
@@ -27,12 +27,9 @@ module.exports = class MeterRepairApi {
 				return
 			
 			const { id, value } = apiReq.body
-			
 			showRequestInfoAndTime('Перепрограммирование счетчиков: установка признака перепрограммирования')
 			
-			const query = `update meters set prog_value = ${ value } where id = ${ id } returning *`
-			console.log(query)
-			
+			const query = `update meter_reg set prog_value = ${ value } where id = ${ id } returning *`
 			executePGIQuery(query, apiRes)
 		})
 	}

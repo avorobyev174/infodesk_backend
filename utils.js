@@ -25,6 +25,17 @@ function getDateTime() {
     return `${ year }-${ month }-${ day } ${ hours }:${ minutes }:${ seconds }`
 }
 
+function formatDateTime(datetime) {
+    const date = new Date(datetime)
+    const year = date.getFullYear()
+    const month = date.getMonth() + 1
+    const day = date.getDate()
+    const hours = date.getHours()
+    const minutes = date.getMinutes()
+    const seconds = date.getSeconds()
+    return `${ year }-${ month }-${ day } ${ hours }:${ minutes }:${ seconds }`
+}
+
 async function executePGIQuery(query, apiRes) {
     const client = await pgPool.connect()
     try {
@@ -36,7 +47,6 @@ async function executePGIQuery(query, apiRes) {
         client.release()
     }
 }
-
 
 function executeOraQuery(query, apiRes) {
     getOraConnectionUit().then(
@@ -61,6 +71,7 @@ function executeOraQuery(query, apiRes) {
 module.exports = {
     showRequestInfoAndTime,
     getDateTime,
+    formatDateTime,
     executePGIQuery,
     executeOraQuery,
     jwt,

@@ -100,7 +100,8 @@ module.exports = class ReportsApi {
 				{ address:'ул Доменщиков, д.26', count: 67 },
 				{ address:'ул Мичурина, д.130', count: 98 },
 				{ address:'ул Советская, д.195/1', count: 68 },
-				{ address:'пр-кт Карла Маркса, д.176/1', count: 89 }]
+				{ address:'пр-кт Карла Маркса, д.176/1', count: 89 }
+			]
 			
 			showRequestInfoAndTime(`Отчеты: запрос на данные по выполнению плана по месяцам (дома)`)
 			
@@ -115,7 +116,7 @@ module.exports = class ReportsApi {
 				
 				let results = Promise.all(plan.map(planItem => {
 						const query = `select count(*), date_trunc('month', loaded) as month_loaded
-								  from meters where customer_address like '%${ planItem.address }%'
+								  from meter_reg where customer_address like '%${ planItem.address }%'
 								  and loaded > '${ firstDateOfYear }'
 								  group by date_trunc('month', loaded)
 								  order by date_trunc('month', loaded)`
@@ -197,7 +198,7 @@ module.exports = class ReportsApi {
 			
 			try {
 				const query = `select m.serial_number, t.name, m.address,
-			                m.phone, m.created from meters m, meter_type t
+			                m.phone, m.created from meter_reg m, meter_type t
 			                where in_pyramid = 0 and t.id = m.type order by t.name limit 1000`
 				const { rows } = await client.query(query)
 				if (!rows.length) {
@@ -221,7 +222,9 @@ module.exports = class ReportsApi {
 		})
 		
 		app.get(`/api/${ module_name }/get-non-active-meters-from-pyramid/:days`, (apiReq, apiRes) => {
-			if (!checkAuth(apiReq, apiRes)) return
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
 			
 			let dayDepth = apiReq.params.days
 			console.log(`Глубина дней = ${ dayDepth }`)
@@ -233,7 +236,7 @@ module.exports = class ReportsApi {
 			}
 			
 			dayDepth = parseInt(dayDepth)
-			const query = `select * from meters where in_pyramid = 1`
+			const query = `select * from meter_reg where in_pyramid = 1`
 			
 			const dateNow = new Date()
 			const dayNow = dateNow.getDate()
@@ -360,7 +363,7 @@ module.exports = class ReportsApi {
 			let firstDateOfYear = `01-01-${ (new Date()).getFullYear() }`
 			
 			const query = `select count(*), address, date_trunc('month', ${ time }) "month"
-			                            from meters where ${ queryParam }${ time } > '${ firstDateOfYear }'
+			                            from meter_reg where ${ queryParam }${ time } > '${ firstDateOfYear }'
                                         group by month, address order by month`
 			
 			pgPool.connect((connErr, client, done) => {
@@ -406,7 +409,7 @@ module.exports = class ReportsApi {
 			
 			try {
 				let { rows } = await client.query(`select serial_number from meter where meter_type = 117`	)
-				const meterInfo = await client.query(`select serial_number, port, ip_address from meters where type = 30 order by port`)
+				const meterInfo = await client.query(`select serial_number, port, ip_address from meter_reg where type = 30 order by port`)
 				const programmingMeters = meterInfo.rows
 				
 				if (!programmingMeters.length) {

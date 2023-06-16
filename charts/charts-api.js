@@ -13,8 +13,8 @@ module.exports = class ChartApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select count(*), date_trunc('day', meters.created) "day"
-                                                        from meters group by day order by day`
+            const query = `select count(*), date_trunc('day', created) "day"
+                                                        from meter_reg group by day order by day`
     
             executePGIQuery(query, apiRes)
         })
@@ -24,8 +24,8 @@ module.exports = class ChartApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select count(*), date_trunc('day', meters.loaded) "day"
-                                                    from meters where in_pyramid = 1 group by day order by day`
+            const query = `select count(*), date_trunc('day', loaded) "day"
+                                                    from meter_reg where in_pyramid = 1 group by day order by day`
     
             executePGIQuery(query, apiRes)
         })
@@ -35,7 +35,7 @@ module.exports = class ChartApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select count(*), type from meters group by type`
+            const query = `select count(*), type from meter_reg group by type order by count desc`
             executePGIQuery(query, apiRes)
         })
 
@@ -44,7 +44,7 @@ module.exports = class ChartApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select * from meters where personal_account is not null and loaded is not null and in_pyramid = 1`
+            const query = `select * from meter_reg where personal_account is not null and loaded is not null and in_pyramid = 1`
             executePGIQuery(query, apiRes)
         })
 
@@ -53,7 +53,7 @@ module.exports = class ChartApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select count(*), customer_type from meters where in_pyramid = 1 group by customer_type`
+            const query = `select count(*), customer_type from meter_reg where in_pyramid = 1 group by customer_type`
             executePGIQuery(query, apiRes)
         })
 
@@ -62,16 +62,16 @@ module.exports = class ChartApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select count(*) from meters group by in_pyramid`
+            const query = `select count(*) from meter_reg group by in_pyramid`
             executePGIQuery(query, apiRes)
         })
 
         app.get(`/api/${module_name}/meter-not-in-pyramid-types-chart`, (apiReq, apiRes) => {
-            showRequestInfoAndTime(`Графики: запрос по числу загруженных в пирамиду`)
+            showRequestInfoAndTime(`Графики: запрос по числу не загруженных в пирамиду`)
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select count(*), type from meters where in_pyramid = 0 group by type `
+            const query = `select count(*), type from meter_reg where in_pyramid = 0 group by type order by count desc`
             executePGIQuery(query, apiRes)
         })
 
@@ -80,7 +80,7 @@ module.exports = class ChartApi {
 
             showRequestInfoAndTime(`Графики: запрос по числу опрашиваемых счетчиков в пирамиде`)
 
-            const query = `select * from meters where in_pyramid = 1`
+            const query = `select * from meter_reg where in_pyramid = 1`
     
             pgPool.connect((connErr, client, done) => {
                 if (connErr) apiRes.status(400).send(connErr.detail)

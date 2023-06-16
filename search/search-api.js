@@ -13,7 +13,7 @@ module.exports = class SearchApi {
             showRequestInfoAndTime(`Получен запрос на данные по счетчику ${ serialNumber } в модуле поиска`)
 
             const query = `select serial_number, type, personal_account, customer_address, customer_type 
-                                                                    from meters where serial_number = '${ serialNumber }'`
+                                                                    from meter_reg where serial_number = '${ serialNumber }'`
 
             const queryAsd = `select data."ДатаВремя" as date_time, ac."ТипКанала" as channel_type, data."Значение" as value
                                 from stack."АСД Приборы" ap, stack."АСД Каналы" ac, stack."АСД ДанНаСут" data

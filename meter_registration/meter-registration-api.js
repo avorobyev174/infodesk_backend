@@ -23,11 +23,20 @@ module.exports = class MeterRegistrationApi {
             showRequestInfoAndTime('Регистрация счетчиков: запрос на информацию о счетчиках')
             
             const inPyramid = apiReq.body.inPyramid === true ? 1 : 0
-            const query = `select * from meters where in_pyramid = ${ inPyramid }`
-    
+            const query = `select * from meter_reg where in_pyramid = ${ inPyramid }`
+            console.log(query)
             executePGIQuery(query, apiRes)
         })
-
+    
+        app.get(`/api/${ module_name }/meter-types`, (apiReq, apiRes) => {
+            if (!checkAuth(apiReq, apiRes))
+                return
+        
+            const query = `select id, type_name from meter_storage_type where is_prog = 1 order by type_name`
+        
+            executePGIQuery(query, apiRes)
+        })
+        
         //Добавление счетчика
         app.post(`/api/${ module_name }/meter`, (apiReq, apiRes) => {
             const { error } = _validateMeter(apiReq.body)
@@ -58,9 +67,9 @@ module.exports = class MeterRegistrationApi {
             const parentId = !apiReq.body.parentId ? null : apiReq.body.parentId
             const gateway = !apiReq.body.gateway ? null : apiReq.body.gateway
             const time = getDateTime()
-            const smsStatus = [ 5, 6, 7, 18, 20, 21, 22 ].includes(apiReq.body.type) ? 7 : 0 //МИРы не требуют смс
+            const smsStatus = [ 139, 143, 105, 144, 140, 141, 142 ].includes(apiReq.body.type) ? 7 : 0 //МИРы не требуют смс
 
-            const query = `insert into meters (
+            const query = `insert into meter_reg (
                                             serial_number,
                                             type,
                                             phase,
@@ -109,14 +118,14 @@ module.exports = class MeterRegistrationApi {
                 if (connErr) apiRes.status(400).send(connErr.detail)
     
                 client
-                    .query(`select * from meters`)
+                    .query(`select * from meter_reg`)
                     .then(
                         queryResult => {
                             const meters = queryResult.rows
                             const meter = meters.find(m => m.id === parseInt(meterId));
                             if (!meter) throw new Error('Счетчика с данным id не найдено')
                 
-                            const query = `delete from meters where id = ${meterId} returning id`
+                            const query = `delete from meter_reg where id = ${meterId} returning id`
                             return { promise: client.query(query), meter: meter }
                         })
                     .then(
@@ -188,7 +197,7 @@ module.exports = class MeterRegistrationApi {
             const authResult = checkAuth(apiReq, apiRes)
             if (!authResult) return
 
-            const query = `update meters set (
+            const query = `update meter_reg set (
                                             serial_number,
                                             type,
                                             phase,
@@ -216,7 +225,7 @@ module.exports = class MeterRegistrationApi {
                 if (connErr) apiRes.status(400).send(connErr.detail)
     
                 client
-                    .query(`select * from meters`)
+                    .query(`select * from meter_reg`)
                     .then(
                         queryResult => {
                             const meters = queryResult.rows
@@ -283,7 +292,7 @@ module.exports = class MeterRegistrationApi {
         
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `update meters set in_pyramid = 1, loaded = '${ getDateTime() }'
+            const query = `update meter_reg set in_pyramid = 1, loaded = '${ getDateTime() }'
                                                 where id in (${ meterArray.toString() }) returning *`
             
             executePGIQuery(query, apiRes)
@@ -304,7 +313,7 @@ module.exports = class MeterRegistrationApi {
             const authResult = checkAuth(apiReq, apiRes)
             if (!authResult) return
 
-            const query = `insert into meters_broken (
+            const query = `insert into meter_reg_broken (
                                                         meter_id,
                                                         reason,
                                                         created,
@@ -331,7 +340,7 @@ module.exports = class MeterRegistrationApi {
                         queryResult => {
                             const meterId = queryResult.rows[0].meter_id
     
-                            const query = `update meters set (
+                            const query = `update meter_reg set (
                                                 address,
                                                 sms_id,
                                                 sms_status,
@@ -381,7 +390,7 @@ module.exports = class MeterRegistrationApi {
 
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `select * from meters_broken`
+            const query = `select * from meter_reg_broken`
             const queryAcc = `select id, full_name from accounts`
             
             pgPool.connect((connErr, client, done) => {
@@ -426,7 +435,7 @@ module.exports = class MeterRegistrationApi {
             pgPool.connect((connErr, client, done) => {
                 if (connErr) apiRes.status(400).send(connErr.detail)
     
-                client.query(`update meters set in_pyramid = 0, loaded = null where id = ${ meter.id } returning *`)
+                client.query(`update meter_reg set in_pyramid = 0, loaded = null where id = ${ meter.id } returning *`)
                     .then(
                         queryResult => {
                             const updMeter = queryResult.rows[0]
@@ -485,7 +494,7 @@ module.exports = class MeterRegistrationApi {
             pgPool.connect((connErr, client, done) => {
                 if (connErr) apiRes.status(400).send(connErr.detail)
     
-                client.query(`update meters set in_pyramid = 1, loaded = '${ getDateTime() }' where id = ${ meter.id } returning *`)
+                client.query(`update meter_reg set in_pyramid = 1, loaded = '${ getDateTime() }' where id = ${ meter.id } returning *`)
                     .then(
                         queryResult => {
                             const updMeter = queryResult.rows[0]
@@ -536,7 +545,7 @@ module.exports = class MeterRegistrationApi {
                 return
             }
         
-            const query = `select * from meters where type = 22`
+            const query = `select * from meter_reg where type = 142`
             
             executePGIQuery(query, apiRes)
         })

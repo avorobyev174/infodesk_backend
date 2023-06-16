@@ -96,7 +96,6 @@ module.exports = class MeterStorageApi {
 				desc = 'desc'
 			}
 			
-			
 			if (serialNumber) {
 				const serNumber = serialNumber.trim()
 				const serialNumbers = serNumber.split(' ').map((serialNumber) => `'${ serialNumber }'`)

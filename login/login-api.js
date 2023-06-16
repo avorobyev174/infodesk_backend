@@ -31,7 +31,7 @@ module.exports = class LoginApi {
                                 { expiresIn: tokenExp })
     
                             const userCookies = await client.query(`select * from account_cookies where acc_id = ${ account.id }`)
-                            const moduleAccess = await client.query(`select access_modules, staff_id, roles
+                            const moduleAccess = await client.query(`select acc_id, access_modules, staff_id, roles
                                                                         from account_module_access where acc_id = ${ account.id }`)
                                 
                             return apiRes.status(200).send({
