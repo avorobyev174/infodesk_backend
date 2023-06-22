@@ -127,7 +127,7 @@ module.exports = class ReportsApi {
 							},
 						);
 					}
-				));
+				))
 				
 				results.then(
 					resolve => {

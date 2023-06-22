@@ -10,6 +10,7 @@ const MeterRepairApi = require('./meter_repair/meter-repair-api')
 const RepairAndMaterials = require('./meter_storage/modules/repair-and-materials')
 const ServiceApi = require('./service/meter-service-api')
 const CommonApi = require('./common/common-api')
+const MapApi = require('./map/map-api')
 
 function _loadApi(app) {
     new MeterRegistrationApi(app)
@@ -24,6 +25,7 @@ function _loadApi(app) {
     new RepairAndMaterials(app)
     new ServiceApi(app)
     new CommonApi(app)
+    new MapApi(app)
 }
 
 module.exports = {

@@ -1,10 +1,10 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection")
 const { pgStekASDPool } = require("../database/postgres/postgres-stek-asd-db-connection")
-const { getDateTime, formatDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils')
+const { getCurrentDateTime, formatDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils')
 const { checkAuth } = require('../login/login-api')
 const module_name = 'meter-service'
 const DAY_DEPTH = 3
-const { AssignmentEventType } = require("../const.js")
+const { AssignmentEventTypes, AssignmentStatuses } = require("../const")
 
 module.exports = class MeterServiceApi {
 	constructor(app) {
@@ -100,7 +100,8 @@ module.exports = class MeterServiceApi {
 					if (!assignment) {
 						const lastDataDateTime = last_date_time ? `'${ last_date_time }'` : null
 						const customerContacts = `${ customer_phone } ${ customer_email }`.trim()
-						const assignment = await executeQuery(client,`insert into assignment (
+						const assignment = await executeQuery(client,
+													`insert into assignment (
 															meter_type,
 															meter_serial_number,
 															meter_ip_address,
@@ -122,19 +123,19 @@ module.exports = class MeterServiceApi {
 															'${ customer_address }',
 															'${ customerContacts }',
 															${ lastDataDateTime },
-															'${ getDateTime() }',
-															0) returning *`)
+															'${ getCurrentDateTime() }',
+															${ AssignmentStatuses.REGISTERED }
+														) returning *`)
 						
 						const [ newAssignment ] = assignment
 						const { id } = newAssignment
-						await createAssignmentEvent(client, AssignmentEventType.REGISTER, id)
+						await createAssignmentEvent(client, AssignmentEventTypes.REGISTERED, id)
 					}
 				}
 
 				assignments = await executeQuery(client,'select * from assignment')
 				apiRes.send(assignments)
 			} catch (e) {
-				console.log(e)
 				apiRes.status(400).send(e.message)
 			} finally {
 				client.release()
@@ -153,19 +154,21 @@ module.exports = class MeterServiceApi {
 			if (!authResult) {
 				return
 			}
-			const { customer_contacts, status } = apiReq.body
+			const { customerContacts } = apiReq.body
 			const client = await pgPool.connect()
 			try {
 				let query = ''
-				if (customer_contacts) {
-					query = `update assignment set customer_contacts = '${ customer_contacts }' where id = ${ assignmentId } returning *`
-				} else if (status) {
-					const { value, reason } = status
-					query = `update assignment set status = ${ value }, status_reason = ${ reason } where id = ${ assignmentId } returning *`
-					await createAssignmentEvent(client, AssignmentEventType.CLOSE, assignmentId)
+				if (customerContacts) {
+					query = `update assignment
+								set customer_contacts = '${ customerContacts }'
+								where id = ${ assignmentId } returning *`
 				} else {
-					query = `update assignment set owner_id = ${ authResult.id }, status = 1 where id = ${ assignmentId } returning *`
-					await createAssignmentEvent(client, AssignmentEventType.EDIT, assignmentId)
+					query = `update assignment
+								set owner_id = ${ authResult.id },
+								status = ${ AssignmentStatuses.IN_WORK }
+								where id = ${ assignmentId } returning *`
+					
+					await createAssignmentEvent(client, AssignmentEventTypes.IN_WORK, assignmentId, authResult.id)
 				}
 				
 				const assignment = await executeQuery(client, query)
@@ -184,20 +187,159 @@ module.exports = class MeterServiceApi {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
-			executePGIQuery(`select * from assignment_event where assignment_id = ${ assignmentId }`, apiRes)
+			executePGIQuery(`select * from assignment_event
+									where assignment_id = ${ assignmentId } order by id desc`, apiRes)
+		})
+		
+		//Создание события активности
+		app.post(`/api/${ module_name }/add-action-assignment/:id`, async (apiReq, apiRes) => {
+			const assignmentId = apiReq.params.id
+			const authResult = checkAuth(apiReq, apiRes)
+			if (!authResult) {
+				return
+			}
+			const { description } = apiReq.body
+			const client = await pgPool.connect()
+			try {
+				const assignmentEvent = await createAssignmentEvent(
+					client,
+					AssignmentEventTypes.ACTION,
+					assignmentId,
+					authResult.id,
+					description
+				)
+				apiRes.send(assignmentEvent)
+			} catch (e) {
+				apiRes.status(400).send(e.message)
+			} finally {
+				client.release()
+			}
+		})
+		
+		//Редактирование события активности
+		app.put(`/api/${ module_name }/change-action-event/:id`, async (apiReq, apiRes) => {
+			const actionEventId = apiReq.params.id
+			const authResult = checkAuth(apiReq, apiRes)
+			if (!authResult) {
+				return
+			}
+			const { description } = apiReq.body
+			const client = await pgPool.connect()
+			try {
+				const desc = description ? `'${ description }'` : null
+				const assignmentEvent = await executeQuery(client,
+					`update assignment_event set description = ${ desc }
+							where id = ${ actionEventId } returning *`)
+				
+				apiRes.send(assignmentEvent)
+			} catch (e) {
+				apiRes.status(400).send(e.message)
+			} finally {
+				client.release()
+			}
+		})
+		
+		//Удаление события активности
+		app.post(`/api/${ module_name }/delete-action-assignment/:id`, async (apiReq, apiRes) => {
+			const eventId = apiReq.params.id
+			const authResult = checkAuth(apiReq, apiRes)
+			if (!authResult) {
+				return
+			}
+			const client = await pgPool.connect()
+			try {
+				const assignmentEvent = await executeQuery(client,
+					`delete from assignment_event where id = ${ eventId } returning *`)
+				
+				apiRes.send(assignmentEvent)
+			} catch (e) {
+				apiRes.status(400).send(e.message)
+			} finally {
+				client.release()
+			}
+		})
+		
+		//Закрытие поручения
+		app.post(`/api/${ module_name }/close-assignment/:id`, async (apiReq, apiRes) => {
+			const { error } = _validateAssignment(apiReq.body)
+			if (error) {
+				return apiRes.status(400).send(error.details[0].message)
+			}
+			const assignmentId = apiReq.params.id
+			const authResult = checkAuth(apiReq, apiRes)
+			if (!authResult) {
+				return
+			}
+			const { closeReason, description } = apiReq.body
+			const client = await pgPool.connect()
+			try {
+				const query = `update assignment
+								 set status = ${ AssignmentStatuses.CLOSE },
+								 current_close_reason = ${ closeReason }
+								 where id = ${ assignmentId } returning *`
+				
+				const assignmentEvent = await createAssignmentEvent(
+					client,
+					AssignmentEventTypes.CLOSE,
+					assignmentId,
+					authResult.id,
+					description,
+					closeReason
+				)
+				
+				const assignment = await executeQuery(client, query)
+				apiRes.send({ assignment: assignment[0], assignmentEvent: assignmentEvent[0] })
+			} catch (e) {
+				apiRes.status(400).send(e.message)
+			} finally {
+				client.release()
+			}
+		})
+		
+		//Редактирование контактов
+		app.post(`/api/${ module_name }/save-assignment-contacts/:id`, async (apiReq, apiRes) => {
+			const assignmentId = apiReq.params.id
+			const authResult = checkAuth(apiReq, apiRes)
+			if (!authResult) {
+				return
+			}
+			const { contacts } = apiReq.body
+			const client = await pgPool.connect()
+			try {
+				const contact = contacts ? `'${ contacts }'` : null
+				const assignment = await executeQuery(client,
+					`update assignment set customer_contacts = ${ contact }
+							where id = ${ assignmentId } returning *`)
+				
+				apiRes.send(assignment)
+			} catch (e) {
+				apiRes.status(400).send(e.message)
+			} finally {
+				client.release()
+			}
 		})
 	}
 }
 
-async function createAssignmentEvent(client, eventType, assignmentId) {
-	await executeQuery(client,`insert into assignment_event (
+async function createAssignmentEvent(client, eventType, assignmentId, ownerId, description, closeReason) {
+	const owner = ownerId ? ownerId : null
+	const desc = description ? `'${ description }'` : null
+	const reason = closeReason ? closeReason : null
+	return await executeQuery(client,
+								`insert into assignment_event (
 										created,
 										type,
+										owner_id,
+										description,
+										close_reason,
 										assignment_id)
 									values (
-										'${ getDateTime() }',
+										'${ getCurrentDateTime() }',
 										${ eventType },
-										${ assignmentId })`)
+										${ owner },
+										${ desc },
+										${ reason },
+										${ assignmentId }) returning *`)
 }
 
 async function executeQuery(client, query) {
@@ -208,7 +350,9 @@ async function executeQuery(client, query) {
 
 function _validateAssignment(assignment) {
 	const schema = {
-		customer_contacts: joi.string().empty(),
+		customerContacts: joi.string().empty('').allow(null),
+		description: joi.string().empty('').allow(null),
+		closeReason: joi.number().allow(null),
 	}
 	return joi.validate(assignment, schema);
 }

@@ -1,4 +1,4 @@
-const { showRequestInfoAndTime, joi, executePGIQuery, getDateTime } = require('../../utils'),
+const { showRequestInfoAndTime, joi, executePGIQuery, getCurrentDateTime } = require('../../utils'),
 { pgStekPool } = require("../../database/postgres/postgres-stek-db-connection"),
 { pgPool } = require("../../database/postgres/postgres-db-connection"),
 { checkAuth } = require('../../login/login-api')
@@ -102,7 +102,7 @@ module.exports = class refreshFromStekApi {
 			}
 			
 			const query = `insert into meter_reg_broken (meter_id, reason, created, comment, data, acc_id)
-                            values (${ meterId }, 2, '${ getDateTime() }', '', '${ data }', ${ authResult.id }) returning *`
+                            values (${ meterId }, 2, '${ getCurrentDateTime() }', '', '${ data }', ${ authResult.id }) returning *`
 			
 			const client = await pgPool.connect()
 			

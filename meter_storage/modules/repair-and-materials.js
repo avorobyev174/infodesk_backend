@@ -1,4 +1,4 @@
-const { joi, getDateTime, executePGIQuery  } = require('../../utils'),
+const { joi, getCurrentDateTime, executePGIQuery  } = require('../../utils'),
 { pgPool } = require("../../database/postgres/postgres-db-connection"),
 { checkAuth } = require('../../login/login-api')
 
@@ -161,7 +161,7 @@ module.exports = class repairAndMaterials {
 						const insertQuery = `insert into meter_spent_item (log_id, item_id, datetime, amount)
 							values (${ logId },
 							${ material.materialType },
-							'${ getDateTime() }',
+							'${ getCurrentDateTime() }',
 							${ material.count })`
 						
 						console.log(insertQuery)
@@ -210,7 +210,7 @@ module.exports = class repairAndMaterials {
 					console.log(material)
 					const query = `insert into meter_item_storage (item_id, datetime, amount)
 						values (${ material.materialType },
-						'${ getDateTime() }',
+						'${ getCurrentDateTime() }',
 						${ material.count })`
 					
 					console.log(query)
@@ -264,7 +264,7 @@ module.exports = class repairAndMaterials {
 						values (${ logId },
 						${ isWorkable ? 1 : 0 },
 						'${ comment }',
-						'${ getDateTime() }')`
+						'${ getCurrentDateTime() }')`
 					
 					console.log(insertQuery)
 					const insertResponse = await client.query(insertQuery)

@@ -1,5 +1,5 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection"),
-{ getDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils'),
+{ getCurrentDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils'),
 { checkAuth } = require('../login/login-api'),
 module_name = 'meter-registration',
 actualizeFromRTCApi = require('./modules/actualize-from-rtc-api'),
@@ -66,7 +66,7 @@ module.exports = class MeterRegistrationApi {
             const contact = !apiReq.body.contact ? null : apiReq.body.contact
             const parentId = !apiReq.body.parentId ? null : apiReq.body.parentId
             const gateway = !apiReq.body.gateway ? null : apiReq.body.gateway
-            const time = getDateTime()
+            const time = getCurrentDateTime()
             const smsStatus = [ 139, 143, 105, 144, 140, 141, 142 ].includes(apiReq.body.type) ? 7 : 0 //МИРы не требуют смс
 
             const query = `insert into meter_reg (
@@ -147,7 +147,7 @@ module.exports = class MeterRegistrationApi {
                                         '{}',
                                         ${ authResult.id },
                                         ${ meterId },
-                                        '${ getDateTime() }'
+                                        '${ getCurrentDateTime() }'
                                     )
                             returning id`
                 
@@ -255,7 +255,7 @@ module.exports = class MeterRegistrationApi {
                                         '${ JSON.stringify(queryResult.rows[0]) }',
                                         ${ authResult.id },
                                         ${ meterId },
-                                        '${ getDateTime() }'
+                                        '${ getCurrentDateTime() }'
                                      ) returning id`
     
                             //console.log(queryLog)
@@ -292,7 +292,7 @@ module.exports = class MeterRegistrationApi {
         
             if (!checkAuth(apiReq, apiRes)) return
 
-            const query = `update meter_reg set in_pyramid = 1, loaded = '${ getDateTime() }'
+            const query = `update meter_reg set in_pyramid = 1, loaded = '${ getCurrentDateTime() }'
                                                 where id in (${ meterArray.toString() }) returning *`
             
             executePGIQuery(query, apiRes)
@@ -325,7 +325,7 @@ module.exports = class MeterRegistrationApi {
                                                      (
                                                         ${ meterId },
                                                         ${ reason },
-                                                        '${ getDateTime() }',
+                                                        '${ getCurrentDateTime() }',
                                                         '${ comment }',
                                                         '${ data }',
                                                         ${ authResult.id })
@@ -453,7 +453,7 @@ module.exports = class MeterRegistrationApi {
                                                              '${ JSON.stringify(updMeter) }',
                                                              ${ authResult.id },
                                                              ${ meter.id },
-                                                             '${ getDateTime() }')
+                                                             '${ getCurrentDateTime() }')
                                                          returning id`
     
                             return { promise : client.query(queryLog), queryMeterResult: queryResult }
@@ -494,7 +494,7 @@ module.exports = class MeterRegistrationApi {
             pgPool.connect((connErr, client, done) => {
                 if (connErr) apiRes.status(400).send(connErr.detail)
     
-                client.query(`update meter_reg set in_pyramid = 1, loaded = '${ getDateTime() }' where id = ${ meter.id } returning *`)
+                client.query(`update meter_reg set in_pyramid = 1, loaded = '${ getCurrentDateTime() }' where id = ${ meter.id } returning *`)
                     .then(
                         queryResult => {
                             const updMeter = queryResult.rows[0]
@@ -512,7 +512,7 @@ module.exports = class MeterRegistrationApi {
                                                              '${ JSON.stringify(updMeter) }',
                                                              ${ authResult.id },
                                                              ${ meter.id },
-                                                             '${ getDateTime() }')
+                                                             '${ getCurrentDateTime() }')
                                                          returning id`
     
                             return { promise : client.query(queryLog), queryMeterResult: queryResult }

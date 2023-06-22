@@ -1,4 +1,4 @@
-const { showRequestInfoAndTime, joi, getDateTime, executePGIQuery  } = require('../../utils'),
+const { showRequestInfoAndTime, joi, getCurrentDateTime, executePGIQuery  } = require('../../utils'),
 { pgPool } = require("../../database/postgres/postgres-db-connection"),
 { checkAuth } = require('../../login/login-api')
 
@@ -88,7 +88,7 @@ module.exports = class acceptOrIssueApi {
 	                                 ${ operationType },
 	                                 ${ issuingPersonStaffId },
 	                                 ${ acceptedPersonStaffId },
-	                                 '${ getDateTime() }',
+	                                 '${ getCurrentDateTime() }',
 	                                 null,
 	                                 ${ meterLocation },
 	                                 '${ comment }')`
@@ -152,7 +152,7 @@ module.exports = class acceptOrIssueApi {
                                  8,
                                  0,
                                  ${ editorStaffId },
-                                 '${ getDateTime() }',
+                                 '${ getCurrentDateTime() }',
                                  '${ updateField }',
                                  '${ commentLog }')`
 				
@@ -206,7 +206,7 @@ module.exports = class acceptOrIssueApi {
 				                         ${ operationType },
 				                         ${ issuingPersonStaffId },
 				                         ${ acceptedPersonStaffId },
-				                         '${ getDateTime() }',
+				                         '${ getCurrentDateTime() }',
 				                         '${ comment }',
 				                         ${ meters[0].oldLocation },
 				                         ${ newLocation }
@@ -245,7 +245,7 @@ module.exports = class acceptOrIssueApi {
 								`'${ JSON.stringify(meter) }',
 				                 '${ guid }',
 			                      ${ editorStaffId },
-				                 '${ getDateTime() }')`
+				                 '${ getCurrentDateTime() }')`
 				
 				const { rows } = await client.query(`delete from meter where guid = '${ guid }' returning guid`)
 				const [ deletedMeter ] = rows

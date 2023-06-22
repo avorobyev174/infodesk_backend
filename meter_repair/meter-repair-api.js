@@ -1,5 +1,5 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection")
-const { getDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils')
+const { getCurrentDateTime, showRequestInfoAndTime, joi, executePGIQuery } = require('../utils')
 const { checkAuth } = require('../login/login-api')
 const module_name = 'meter-repair'
 const PROG_METER_TYPES = [ 111, 119, 120 ]

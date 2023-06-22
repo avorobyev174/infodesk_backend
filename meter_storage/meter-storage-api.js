@@ -1,17 +1,17 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection")
-const { getDateTime, joi, executePGIQuery } = require('../utils')
+const { getCurrentDateTime, joi, executePGIQuery } = require('../utils')
 const { checkAuth } = require('../login/login-api')
-const module_name = 'meter-storage'
+const moduleName = 'meter-storage'
 const acceptOrIssueOrRegApi = require('./modules/accept-or-issue-or-register-api')
 const repairAndMaterialsApi = require('./modules/repair-and-materials')
 
 module.exports = class MeterStorageApi {
 	constructor(app) {
-		new acceptOrIssueOrRegApi(app, module_name)
-		new repairAndMaterialsApi(app, module_name)
+		new acceptOrIssueOrRegApi(app, moduleName)
+		new repairAndMaterialsApi(app, moduleName)
 		
 		//Получение списка счетчиков постранично
-		app.post(`/api/${ module_name }/meters`, async (apiReq, apiRes) => {
+		app.post(`/api/${ moduleName }/meters`, async (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
@@ -66,7 +66,7 @@ module.exports = class MeterStorageApi {
 			}
 		})
 		
-		app.get(`/api/${ module_name }/meter-types`, (apiReq, apiRes) => {
+		app.get(`/api/${ moduleName }/meter-types`, (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes))
 				return
 			
@@ -75,7 +75,7 @@ module.exports = class MeterStorageApi {
 			executePGIQuery(query, apiRes)
 		})
 		
-		app.post(`/api/${ module_name }/filter`, async (apiReq, apiRes) => {
+		app.post(`/api/${ moduleName }/filter`, async (apiReq, apiRes) => {
 			const { error } = _validateFilters(apiReq.body)
 			if (error) {
 				return apiRes.status(400).send(error.details[0].message)
@@ -153,7 +153,7 @@ module.exports = class MeterStorageApi {
 			}
 		})
 		
-		app.get(`/api/${ module_name }/storage-employees`, (apiReq, apiRes) => {
+		app.get(`/api/${ moduleName }/storage-employees`, (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
@@ -161,7 +161,7 @@ module.exports = class MeterStorageApi {
 			executePGIQuery(`select staff_id, name, card from employees`, apiRes)
 		})
 		
-		app.get(`/api/${ module_name }/logs/:guid`, (apiReq, apiRes) => {
+		app.get(`/api/${ moduleName }/logs/:guid`, (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
@@ -175,7 +175,7 @@ module.exports = class MeterStorageApi {
 			executePGIQuery(query, apiRes)
 		})
 		
-		app.get(`/api/${ module_name }/parse-options`, (apiReq, apiRes) => {
+		app.get(`/api/${ moduleName }/parse-options`, (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
@@ -183,7 +183,7 @@ module.exports = class MeterStorageApi {
 			executePGIQuery(`select id, barcode_thrue_index as parse_option from meter_mnf`, apiRes)
 		})
 		
-		app.post(`/api/${ module_name }/edit-log-comment`, async (apiReq, apiRes) => {
+		app.post(`/api/${ moduleName }/edit-log-comment`, async (apiReq, apiRes) => {
 			const { error } = _validateEditComment(apiReq.body)
 			if (error) {
 				return apiRes.status(400).send(error.details[0].message)

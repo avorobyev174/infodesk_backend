@@ -14,7 +14,7 @@ function showRequestInfoAndTime(message) {
     console.log(`${ message } (время: ${ time })\n`)
 }
 
-function getDateTime() {
+function getCurrentDateTime() {
     const date = new Date()
     const year = date.getFullYear()
     const month = date.getMonth() + 1
@@ -48,35 +48,21 @@ async function executePGIQuery(query, apiRes) {
     }
 }
 
-function executeOraQuery(query, apiRes) {
-    getOraConnectionUit().then(
-        oraConn => {
-            oraConn.execute(query).then(
-                result => {
-                    oraConn.close()
-                    apiRes.send(result.rows)
-                },
-                error => {
-                    oraConn.close()
-                    console.log(`Запрос (${ query }). Ошибка: ${ error }`);
-                    apiRes.status(400).send(error.detail);
-                }
-            )
-        }
-    )
-    
+async function executeQuery(client, query) {
+    const { rows } = await client.query(query)
+    return rows
 }
 
 
 module.exports = {
     showRequestInfoAndTime,
-    getDateTime,
+    getCurrentDateTime,
     formatDateTime,
     executePGIQuery,
-    executeOraQuery,
     jwt,
     authKey,
     roleKey,
     joi,
-    tokenExp
+    tokenExp,
+    executeQuery
 }
