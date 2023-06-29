@@ -9,7 +9,7 @@ module.exports = class repairAndMaterials {
 				return
 			}
 			
-			executePGIQuery(`select * from meter_item order by item`, apiRes)
+			executePGIQuery(`select * from meter_item order by id`, apiRes)
 		})
 		
 		app.get(`/api/${ module_name }/get-meter-types-in-repair`, (apiReq, apiRes) => {
@@ -126,7 +126,7 @@ module.exports = class repairAndMaterials {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
 			}
-			console.log(apiReq.body)
+			//console.log(apiReq.body)
 			const { meters, materials, updateStr } = apiReq.body
 			if (!meters.length) {
 				return apiRes.status(400).send('Список счетчиков пустой')
@@ -145,9 +145,9 @@ module.exports = class repairAndMaterials {
 						and m.guid = ml.meter_guid and ml.oper_type = 1
 						and m.meter_type = ${ meter.type } order by ml.id desc) as x limit 1`
 					
-					console.log(query)
+					//console.log(query)
 					const { rows } = await client.query(query)
-					console.log(rows)
+					//console.log(rows)
 					if (!rows.length) {
 						return apiRes.status(400).send('не найден лог выдачи в ремонт')
 					}
@@ -157,16 +157,16 @@ module.exports = class repairAndMaterials {
 					let updateField = log.update_field
 					
 					for (const material of materials) {
-						console.log(material)
+						//console.log(material)
 						const insertQuery = `insert into meter_spent_item (log_id, item_id, datetime, amount)
 							values (${ logId },
 							${ material.materialType },
 							'${ getCurrentDateTime() }',
 							${ material.count })`
 						
-						console.log(insertQuery)
+						//console.log(insertQuery)
 						const insertResponse = await client.query(insertQuery)
-						console.log(insertResponse)
+						//console.log(insertResponse)
 					}
 					
 					if (updateField) {
@@ -175,9 +175,9 @@ module.exports = class repairAndMaterials {
 						updateField = updateStr
 					}
 					const updateQuery = `update meter_log set update_field = '${ updateField }' where id = ${ logId }`
-					console.log(updateQuery)
+					//console.log(updateQuery)
 					const updateResponse = await client.query(updateQuery)
-					console.log(updateResponse)
+					//console.log(updateResponse)
 				}
 				
 				return apiRes.send({ success: true })
@@ -189,7 +189,7 @@ module.exports = class repairAndMaterials {
 		})
 		
 		app.post(`/api/${ module_name }/insert-material-to-storage`, async (apiReq, apiRes) => {
-			console.log(apiReq.body)
+			//.log(apiReq.body)
 			const { error } = _validateStorageMaterials(apiReq.body)
 			if (error) {
 				return apiRes.status(400).send(error.details[0].message)
@@ -207,13 +207,13 @@ module.exports = class repairAndMaterials {
 			
 			try {
 				for (const material of materials) {
-					console.log(material)
+					//console.log(material)
 					const query = `insert into meter_item_storage (item_id, datetime, amount)
 						values (${ material.materialType },
 						'${ getCurrentDateTime() }',
 						${ material.count })`
 					
-					console.log(query)
+					//console.log(query)
 					await client.query(query)
 				}
 				
@@ -226,7 +226,7 @@ module.exports = class repairAndMaterials {
 		})
 		
 		app.post(`/api/${ module_name }/insert-meter-work-status`, async (apiReq, apiRes) => {
-			console.log(apiReq.body)
+			//console.log(apiReq.body)
 			const { error } = _validateInsertMeterWorkStatus(apiReq.body)
 			if (error) {
 				return apiRes.status(400).send(error.details[0].message)
@@ -250,9 +250,9 @@ module.exports = class repairAndMaterials {
 						and m.guid = ml.meter_guid and ml.oper_type = 1
 						and m.meter_type = ${ meter.type } order by ml.id desc) as x limit 1`
 					
-					console.log(query)
+					//console.log(query)
 					const { rows } = await client.query(query)
-					console.log(rows)
+					//console.log(rows)
 					if (!rows.length) {
 						return apiRes.status(400).send('не найден лог выдачи в ремонт')
 					}
@@ -266,9 +266,9 @@ module.exports = class repairAndMaterials {
 						'${ comment }',
 						'${ getCurrentDateTime() }')`
 					
-					console.log(insertQuery)
+					//console.log(insertQuery)
 					const insertResponse = await client.query(insertQuery)
-					console.log(insertResponse)
+					//console.log(insertResponse)
 					if (updateField) {
 						updateField += updateStr
 					} else {
@@ -276,9 +276,9 @@ module.exports = class repairAndMaterials {
 					}
 			
 					const updateQuery = `update meter_log set update_field = '${ updateField }' where id = ${ logId }`
-					console.log(updateQuery)
+					//console.log(updateQuery)
 					const updateResponse = await client.query(updateQuery)
-					console.log(updateResponse)
+					//console.log(updateResponse)
 				}
 				
 				return apiRes.send({ success: true })

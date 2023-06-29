@@ -19,6 +19,7 @@
     "joi": "^13.1.0",
     "jsonwebtoken": "^8.5.1",
     "mysql": "^2.18.1",
+    "node-schedule": "^2.1.1",
     "oracledb": "^5.3.0",
     "pg": "^8.7.3",
     "smpp": "^0.6.0-rc.4",

@@ -5,18 +5,6 @@ const module_name = 'common'
 
 module.exports = class CommonApi {
 	constructor(app) {
-		app.get(`/api/${ module_name }/accounts`, async (apiReq, apiRes) => {
-			await simpleExecute('select id, full_name from accounts order by id', apiReq, apiRes)
-		})
-		
-		app.get(`/api/${ module_name }/assignment-event-types`, async (apiReq, apiRes) => {
-			await simpleExecute('select * from assignment_event_type', apiReq, apiRes)
-		})
-		
-		app.get(`/api/${ module_name }/assignment-close-reason-types`, async (apiReq, apiRes) => {
-			await simpleExecute('select * from assignment_close_reason_type', apiReq, apiRes)
-		})
-		
 		app.get(`/api/${ module_name }/dictionaries`, async (apiReq, apiRes) => {
 			if (!checkAuth(apiReq, apiRes)) {
 				return
@@ -25,7 +13,11 @@ module.exports = class CommonApi {
 			const dictionariesQueryArray = [
 				{ query: 'select * from assignment_close_reason_type order by id', title: 'assignmentCloseReasonTypes' },
 				{ query: 'select * from assignment_event_type order by id', title: 'assignmentEventTypes' },
-				{ query: 'select id, full_name from accounts order by id', title: 'accounts' },
+				{ query: 'select id, full_name as name, photo_url_sm as photo from accounts order by id', title: 'accounts' },
+				{ query: 'select id as value, type_name as title from meter_storage_type where is_prog = 1 order by type_name', title: 'meterTypes' },
+				{ query: 'select id as value, title from meter_ip_address order by id', title: 'ipAddresses' },
+				{ query: 'select id as value, title from meter_sim_status order by id', title: 'simStatuses' },
+				{ query: 'select id as value, title from assignment_status order by id', title: 'assignmentStatuses' },
 			]
 			const client = await pgPool.connect()
 			try {

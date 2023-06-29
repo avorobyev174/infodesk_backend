@@ -29,8 +29,9 @@ module.exports = class MeterRegistrationApi {
         })
     
         app.get(`/api/${ module_name }/meter-types`, (apiReq, apiRes) => {
-            if (!checkAuth(apiReq, apiRes))
+            if (!checkAuth(apiReq, apiRes)) {
                 return
+            }
         
             const query = `select id, type_name from meter_storage_type where is_prog = 1 order by type_name`
         

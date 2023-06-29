@@ -43,7 +43,6 @@ module.exports = class ReportsStorageApi {
 				`ml.meter_guid = m.guid and m.serial_number = '${ serialNumber }' and ` +
 				`m.meter_type = ${ type } order by ml.id`
 			
-			
 			executePGIQuery(query, apiRes)
 		})
 		
@@ -205,7 +204,7 @@ module.exports = class ReportsStorageApi {
 				let { rows } = await client.query(query)
 				
 				const data = rows.reduce((acc, row) => {
-					const findedRow = acc.find(
+					const foundRow = acc.find(
 						groupRow =>
 							groupRow.date === row.datetime &&
 							groupRow.acceptedPerson === row.accepted_person &&
@@ -214,7 +213,7 @@ module.exports = class ReportsStorageApi {
 							groupRow.operationType === row.oper_type
 					)
 					
-					if (!findedRow) {
+					if (!foundRow) {
 						acc.push({
 							date: row.datetime,
 							type: row.type,
@@ -224,7 +223,7 @@ module.exports = class ReportsStorageApi {
 							acceptedPerson: row.accepted_person
 						})
 					} else {
-						findedRow.count += 1
+						foundRow.count += 1
 					}
 					
 					return acc

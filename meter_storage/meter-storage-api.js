@@ -18,12 +18,12 @@ module.exports = class MeterStorageApi {
 			
 			const { page, itemsPerPage, sortBy, sortDesc, role } = apiReq.body.options
 			console.log(`Страница ${ page } - ${ itemsPerPage } сортировка ${ sortBy } ${ sortDesc }`)
-			
+
 			const roleOption = role === 'repairer' ? ` where meter_location = 1 ` : ''
 			const query = "select id, meter_type, serial_number, accuracy_class, passport_number, condition, " +
 							"calibration_interval, calibration_date, meter_location, current_owner, property, guid " +
-							`from meter ${ roleOption } order by id ${ sortDesc[0] ? 'desc' : '' }`
-			
+							`from meter ${ roleOption } order by ${ sortBy[0] ? sortBy[0] : 'id' } ${ sortDesc[0] ? 'desc' : '' }`
+
 			const client = await pgPool.connect()
 			try {
 				const { rows } = await client.query(query)
@@ -48,9 +48,7 @@ module.exports = class MeterStorageApi {
 						if (updateField) {
 							color = updateField.includes('Статус ремонта:')
 								? 2
-								: updateField.includes('Используемые материалы:')
-									? 1
-									: 0
+								: updateField.includes('Используемые материалы:') ? 1 : 0
 						}
 						
 						return { ...row, repairColor: color }

@@ -12,76 +12,54 @@ module.exports = class actualizeFromRTCApi {
 		app.get(`/api/${ module_name }/actualize-data-from-rtc`, async (apiReq, apiRes) => {
 			showRequestInfoAndTime(`Регистрация счетчиков: запрос на предоставление данных для актуализации по API ростелекома`)
 
-			if (!checkAuth(apiReq, apiRes))
+			if (!checkAuth(apiReq, apiRes)) {
 				return
+			}
 
 			try {
 				const httpsAgent = new Agent({ rejectUnauthorized: false })
-		
-				let respAuth = await axios.get('http://m2m.rt.ru/openapi/v1/tokens-stub-m2m/get?',
+				let authResponse = await axios.get('http://m2m.rt.ru/openapi/v1/tokens-stub-m2m/get?',
 					{
-						params: {
-							login: rtc.login,
-							password: rtc.password
-						},
+						params: { login: rtc.login, password: rtc.password },
 						httpsAgent: httpsAgent
 					}
 				)
 
-				//console.log(respAuth)
-				const authToken = respAuth.data.authToken
-				if (!authToken)
-					console.log('Не получено токена авторизации для API ростелекома')
-				else
-					console.log(`Токен получен: ${ authToken }`)
-
-				let simCardsAll = []
-
-				let count = 0
-				let res = await axios.post(
+				const { authToken } = authResponse.data
+				//console.log(!authToken ? 'Токен авторизации для API ростелекома не получен' : `Токен получен: ${ authToken }`)
+				const simResponse = await axios.post(
 					'https://m2m.rt.ru/openapi/v1/M2M/SIMCards/search?', {},
 					{
-						params: {
-							authToken: authToken,
-							limit: 1
-						},
+						params: { authToken: authToken, limit: 1 },
 						httpsAgent: httpsAgent
 					}
 				)
-
-				count = Math.trunc(res.data.listInfo.count / 1000)
-				//console.log(`Количество записей = ${ res.data.listInfo.count }`)
-
-				for (let i = 0; i < count + 1; i++) {
-					let resSimCards = await axios.post(
-						'https://m2m.rt.ru/openapi/v1/M2M/SIMCards/search?', {},
-						{
-							params: {
-								authToken: authToken,
-								limit: 1000,
-								offset: i * 1000
-							},
-							httpsAgent: httpsAgent
-						}
-					)
-
-					simCardsAll = simCardsAll.concat(resSimCards.data.SIMCards)
-				}
-
-				console.log(`Получены данные о симкартах, размер: ${ simCardsAll.length }`)
-				apiRes.send(simCardsAll)
+				const { listInfo } = simResponse.data
+				const pageCount = Math.trunc(listInfo.count / 1000)
+				console.log(`Количество записей = ${ listInfo.count }`)
+				
+				const simCards = await Promise.all(Array
+					.from({ length: pageCount + 1 }, (_, index) => index)
+					.map(async (page) => {
+						const { data } = await axios.post(
+							'https://m2m.rt.ru/openapi/v1/M2M/SIMCards/search?', {},
+							{
+								params: {
+									authToken: authToken,
+									limit: 1000,
+									offset: page * 1000
+								},
+								httpsAgent: httpsAgent
+							})
+						const { SIMCards } = data
+						return SIMCards
+					}))
+					
+				const totalSimCards = simCards.reduce((totalSimCards, simCardsFromPage) => totalSimCards.concat(simCardsFromPage), [])
+				console.log(`Получены данные о симкартах, размер: ${ totalSimCards.length }`)
+				apiRes.send(totalSimCards)
 			} catch (e) {
-				if (e.response) {
-					//console.log(e.response)
-					console.log(`Запрос по API для получения симкарт завершился ошибкой:
-                                    status = ${ e.response.status }
-                                    text '${ e.response.statusText }'`)
-					apiRes.status(400).send(e.response.statusText)
-				} else {
-					//console.log(e)
-					console.log(`Запрос по API для получения симкарт завершился ошибкой: msg = ${ e.message }`)
-					apiRes.status(501).send(e.message)
-				}
+				apiRes.status(400).send(e.response ? e.response.statusText : e.message)
 			}
 		})
 
@@ -89,15 +67,18 @@ module.exports = class actualizeFromRTCApi {
 		app.put(`/api/${ module_name }/update-meter-from-rtc/:id`, async (apiReq, apiRes) => {
 			const meterId = apiReq.params.id;
 
-			showRequestInfoAndTime(`Регистрация счетчиков: запрос на акутализацию номера телефона и статуса счетчика с id = ${meterId}`)
+			showRequestInfoAndTime(`Регистрация счетчиков: запрос на акутализацию номера телефона и статуса счетчика с id = ${ meterId }`)
 
-			if (!checkAuth(apiReq, apiRes)) return
+			if (!checkAuth(apiReq, apiRes)) {
+				return
+			}
 
 			const { error } = _validateActualizeMeter(apiReq.body)
-			if (error) return apiRes.status(400).send(error.details[0].message)
+			if (error) {
+				return apiRes.status(400).send(error.details[0].message)
+			}
 
 			const smsStatus = [ 139, 143, 105, 144, 140, 141, 142 ].includes(apiReq.body.type) ? 7 : 1 //МИРы не требуют смс
-
 			const query = `update meter_reg set (
                                             phone,
                                             status,
@@ -108,7 +89,6 @@ module.exports = class actualizeFromRTCApi {
                                             ${ apiReq.body.status },
                                             ${ smsStatus }
                                         ) where id = ${ meterId } returning *`
-
 			executePGIQuery(query, apiRes)
 		})
 		
