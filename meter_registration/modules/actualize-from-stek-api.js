@@ -1,4 +1,4 @@
-const { showRequestInfoAndTime, joi, executePGIQuery } = require('../../utils'),
+const { showRequestInfoAndTime, joi, executePGIQuery, executeQuery } = require('../../utils'),
 { pgStekPool } = require("../../database/postgres/postgres-stek-db-connection"),
 { pgPool } = require("../../database/postgres/postgres-db-connection"),
 { checkAuth } = require('../../login/login-api')
@@ -12,58 +12,24 @@ module.exports = class actualizeFromStekApi {
 			}
 			
 			apiReq.setTimeout(0) //чтобы браузер не слал повторный запрос по таймауту(большое время ожидания)
-			
 			showRequestInfoAndTime(`Регистрация счетчиков: запрос на получение данных из стека`)
 			
-			const query = `select serial_number from meter_reg where personal_account is null`
-			
-			pgPool.connect((connErr, client, done) => {
-				if (connErr) {
-					apiRes.status(400).send(connErr.detail)
-				}
-				
-				client
-					.query(query)
-					.then(
-						resolve => {
-							const serialNumbers = resolve.rows
-							console.log(`Найдено ${ serialNumbers.length } счетчиков`)
-							const strSerialNumbers = serialNumbers.map(sn => sn.serial_number).join(',')
-							
-							pgStekPool.connect((stekConnErr, stekClient, stekDone) => {
-								if (stekConnErr) {
-									apiRes.status(400).send(stekConnErr.detail)
-								}
-								
-								stekClient
-									.query(`select * from stack.grmpontinfo('${ strSerialNumbers }', '')`)
-									.then(
-										resolve => {
-											const metersData = resolve.rows.filter(row => parseInt(row.kftt) > 0)
-											console.log('Запрос на получение информации выполнен успешно (' + metersData.length + ' строк)')
-											stekDone()
-											done()
-											apiRes.status(200).send(metersData)
-										})
-									.catch(
-										error => {
-											stekDone()
-											done()
-											console.log(`Запрос (${ query }). Ошибка: ${ error }`)
-											apiRes.status(400).send(error.routine)
-										}
-									)
-							})
-						}
-					).catch(
-						error => {
-							done()
-							console.log(`Запрос (${ query }). Ошибка: ${ error }`)
-							apiRes.status(400).send(error.routine)
-						}
-					)
-				
-			})
+			const client = await pgPool.connect()
+			const stekClient = await pgStekPool.connect()
+			try {
+				const meters = await executeQuery(client, 'select serial_number from meter_reg where personal_account is null')
+				console.log(`Найдено ${ meters.length } счетчиков`)
+				const serialNumbers = meters.map(({ serial_number }) => serial_number).join(',')
+				const metersData = await executeQuery(stekClient, `select * from stack.grmpontinfo('${ serialNumbers }', '')`)
+				const metersFilteredData = metersData.filter((row) => parseInt(row.kftt) > 0)
+				console.log('Запрос на получение информации выполнен успешно (' + metersFilteredData.length + ' строк)')
+				apiRes.status(200).send(metersFilteredData)
+			} catch (e) {
+				apiRes.status(400).send(e.message || e.routine)
+			} finally {
+				client.release()
+				stekClient.release()
+			}
 		})
 		
 		//сохранение данных после актуализации из СТЭКа
@@ -115,95 +81,56 @@ module.exports = class actualizeFromStekApi {
 			
 			showRequestInfoAndTime(`Регистрация счетчиков: запрос на получение данных из стека с id = ${ meterId }`)
 			
-			const query = `select serial_number from meter_reg where id = ${ meterId } and personal_account is null`
-			
-			pgPool.connect((connErr, client, done) => {
-				if (connErr) {
-					apiRes.status(400).send(connErr.detail)
+			const client = await pgPool.connect()
+			const stekClient = await pgStekPool.connect()
+			try {
+				const selectedMeter = await executeQuery(client,
+						`select serial_number from meter_reg where id = ${ meterId } and personal_account is null`)
+				if (!meter.length) {
+					return apiRes
+						.status(400)
+						.send(`Счетчик с id = ${ meterId } и пустым лицевым номером не найдено`)
 				}
 				
-				client
-					.query(query)
-					.then(
-						resolve => {
-							console.log(`Найдено ${ resolve.rows.length } счетчиков`)
-							
-							if (!resolve.rows.length) {
-								done()
-								return apiRes.status(400).send(
-									`Счетчика с id = ${ meterId } и пустым лицевым номером не найдено`
-								)
-							}
-							
-							const serialNumber = resolve.rows[0].serial_number
-							
-							pgStekPool.connect((stekConnErr, stekClient, stekDone) => {
-								if (stekConnErr) {
-									return apiRes.status(400).send(stekConnErr.detail)
-								}
-								
-								stekClient
-									.query(`select * from stack.grmpontinfo('${ serialNumber }', '')`)
-									.then(
-										resolve => {
-											if (!resolve.rows.length) {
-												stekDone()
-												done()
-												apiRes.status(400).send(
-													`Счетчика с id = ${ meterId } не найдено в базе СТЭКа`
-												)
-											}
-											
-											const meterData = resolve.rows.filter(row => parseInt(row.kftt) > 0)[0]
-											console.log('Запрос на получение информации выполнен успешно')
-											console.log(meterData)
-											const updQuery = `update meter_reg set (
-					                                            personal_account,
-					                                            customer,
-					                                            customer_address,
-					                                            customer_phone,
-					                                            customer_email,
-					                                            customer_type,
-					                                            kftt
-					                                            )
-					                                        = (
-					                                            '${ meterData.personal_account }',
-					                                            '${ meterData.customer }',
-					                                            '${ meterData.customer_address }',
-					                                            NULLIF('${ meterData.customer_phone }', 'null'),
-					                                            NULLIF('${ meterData.customer_email }', 'null'),
-					                                            '${ meterData.customer_type }',
-					                                            '${ meterData.kftt }'
-					                                        ) where id = ${ meterId } returning *`
-											console.log(updQuery)
-											return client.query(updQuery)
-										})
-									.then(
-										resolve => {
-											apiRes.status(200).send(resolve.rows[0])
-											stekDone()
-											done()
-										}
-									)
-									.catch(
-										error => {
-											stekDone()
-											done()
-											console.log(`Запрос (${ query }). Ошибка: ${ error }`)
-											apiRes.status(400).send(error.routine)
-										}
-									)
-							})
-						}
-					).catch(
-					error => {
-						done()
-						console.log(`Запрос (${ query }). Ошибка: ${ error }`)
-						apiRes.status(400).send(error.routine)
-					}
-				)
-				
-			})
+				const [ meter ] = selectedMeter
+				const { serial_number } = meter
+				const stekMeterData = await executeQuery(stekClient, `select * from stack.grmpontinfo('${ serial_number }', '')`)
+				if (!stekMeterData.length) {
+					return apiRes
+						.status(400)
+						.send(`Счетчик с id = ${ meterId } и серийным номером ${ serial_number } не найден в базе СТЭКа`)
+				}
+			
+				const [ meterData ] = stekMeterData.filter((row) => parseInt(row.kftt) > 0)
+				console.log('Запрос на получение информации выполнен успешно')
+				console.log(meterData)
+				const updatedQuery = `update meter_reg set (
+			                                            personal_account,
+			                                            customer,
+			                                            customer_address,
+			                                            customer_phone,
+			                                            customer_email,
+			                                            customer_type,
+			                                            kftt)
+					                                     = (
+				                                            '${ meterData.personal_account }',
+				                                            '${ meterData.customer }',
+				                                            '${ meterData.customer_address }',
+				                                            NULLIF('${ meterData.customer_phone }', 'null'),
+				                                            NULLIF('${ meterData.customer_email }', 'null'),
+				                                            '${ meterData.customer_type }',
+				                                            '${ meterData.kftt }'
+				                                        ) where id = ${ meterId } returning *`
+				console.log(updatedQuery)
+				const updatedMeter = await executeQuery(client, updatedQuery)
+				const [ updatedMeterData ] = updatedMeter
+				apiRes.status(200).send(updatedMeterData)
+			} catch (e) {
+				apiRes.status(400).send(e.message || e.routine)
+			} finally {
+				client.release()
+				stekClient.release()
+			}
 		})
 	}
 }

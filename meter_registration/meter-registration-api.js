@@ -24,7 +24,6 @@ module.exports = class MeterRegistrationApi {
             
             const inPyramid = apiReq.body.inPyramid === true ? 1 : 0
             const query = `select * from meter_reg where in_pyramid = ${ inPyramid }`
-            console.log(query)
             executePGIQuery(query, apiRes)
         })
     
@@ -238,7 +237,6 @@ module.exports = class MeterRegistrationApi {
                     .then(
                         async result => {
                             const queryResult = await result.promise
-                            console.log(queryResult.rows[0])
                             const queryLog =
                                 `insert into meter_reg_log
                                      (
@@ -258,8 +256,7 @@ module.exports = class MeterRegistrationApi {
                                         ${ meterId },
                                         '${ getCurrentDateTime() }'
                                      ) returning id`
-    
-                            //console.log(queryLog)
+                            
                             return { promise : client.query(queryLog), queryMeterResult: queryResult }
                         })
                     .then(

@@ -1,6 +1,6 @@
 const { pgPool } = require("../database/postgres/postgres-db-connection")
 const { pgStekASDPool } = require("../database/postgres/postgres-stek-asd-db-connection")
-const { getCurrentDateTime, formatDateTime, showRequestInfoAndTime, joi, executePGIQuery, formatDateTimeForUser } = require('../utils')
+const { getCurrentDateTime, formatDateTime, executeQuery, joi, executePGIQuery, formatDateTimeForUser } = require('../utils')
 const { checkAuth } = require('../login/login-api')
 const module_name = 'meter-service'
 const DAY_DEPTH = 3
@@ -12,6 +12,8 @@ const ASSIGNMENT_EVENT_CLOSE_REASON_NOW_AVAILABLE = 3
 const CLOSE_REASON_TYPES_NEEDS_TO_CALLBACK = [ 2, 3, 4, 5, 7, 9, 10, 13, 14, 15, 16, 17 ]
 const Schedule = require('node-schedule')
 const UpdateScheduleRule = { days: [ 1, 2, 3, 4, 5 ], hour: 8, minute: 0 }
+const { hostUrl } = require('../host-url')
+const { key } = require('../google-map')
 
 createScheduleRule()
 //updateServiceSystem()
@@ -278,49 +280,6 @@ async function insertNewAssignments(client, nonActiveMetersWithLastData, assignm
 		
 		if (!assignment) {
 			const createdAssignment = await createAssignment(client, meter, null, simCardsUpdateData)
-			
-			// const contacts = `'${ customer_phone ? customer_phone : '' } ${ customer_email ? customer_email : '' }'`.trim()
-			// const customerContacts = contacts ? contacts : null
-			// const simCard = simCardsUpdateData.find(({ simPhone }) => simPhone === phone)
-			// const finalSimStatus = simCard && simCard.simStatus !== status ? simCard.simStatus: status
-			// const customerAddress = customer_address ? `'${ customer_address }'` : null
-			// const personalAccount = personal_account ? `'${ personal_account }'` : null
-			// const meterAddress = address ? `'${ address }'` : null
-			// const meterPhone = phone ? `'${ phone }'` : null
-			//
-			// const createdAssignment = await executeQuery(client,
-			// 	`insert into assignment (
-			// 									meter_type,
-			// 									meter_serial_number,
-			// 									meter_ip_address,
-			// 									meter_phone,
-			// 									meter_sim_status,
-			// 									customer_personal_account,
-			// 									customer_address,
-			// 									customer_contacts,
-			// 									last_data_date,
-			// 									created,
-			// 									status,
-			// 									meter_address,
-			// 									meter_port,
-			// 									meter_contact)
-			// 								values (
-			// 									${ type },
-			// 									'${ serial_number }',
-			// 									${ ip_address },
-			// 									${ meterPhone },
-			// 									${ finalSimStatus },
-			// 									${ personalAccount },
-			// 									${ customerAddress },
-			// 									${ customerContacts },
-			// 									${ lastDataDateTime },
-			// 									'${ getCurrentDateTime() }',
-			// 									${ AssignmentStatus.REGISTERED },
-			// 									${ meterAddress },
-			// 									${ port },
-			// 									${ contact }
-			// 								) returning *`)
-			
 			const [ newAssignment ] = createdAssignment
 			const { id } = newAssignment
 			await createAssignmentEvent(
@@ -531,12 +490,6 @@ async function createAssignmentEvent(client, eventType, assignmentId, ownerId, d
 										${ assignmentId }) returning *`)
 }
 
-async function executeQuery(client, query) {
-	console.log(query)
-	const { rows } = await client.query(query)
-	return rows
-}
-
 function createScheduleRule() {
 	let schedule = new Schedule.RecurrenceRule()
 	const { days, hour, minute } = UpdateScheduleRule
@@ -547,6 +500,10 @@ function createScheduleRule() {
 }
 
 async function updateServiceSystem() {
+	if (!parseInt(process.env.IS_PROD)) {
+		return
+	}
+	
 	let updatedAssignments = []
 	let newAssignments = []
 
@@ -624,65 +581,6 @@ async function createAssignmentWithLastData(client, stekASDClient, apiRes, authR
 	}
 	const simCardsUpdateData = await getRTCSimCardsData()
 	return await createAssignment(client, meter, authResult.id, simCardsUpdateData)
-	// const {
-	// 	ip_address,
-	// 	personal_account,
-	// 	customer_address,
-	// 	customer_phone,
-	// 	customer_email,
-	// 	phone,
-	// 	contact,
-	// 	port,
-	// 	status,
-	// 	address
-	// } = meter
-	// const contacts = `'${ customer_phone ? customer_phone : '' } ${ customer_email ? customer_email : '' }'`.trim()
-	// const customerContacts = contacts ? contacts : null
-	// const customerAddress = customer_address ? `'${ customer_address }'` : null
-	// const personalAccount = personal_account ? `'${ personal_account }'` : null
-	// const meterAddress = address ? `'${ address }'` : null
-	// const meterPhone = phone ? `'${ phone }'` : null
-	//
-	// const simCardsUpdateData = await getRTCSimCardsData()
-	// const simCard = simCardsUpdateData.find(({ simPhone }) => simPhone === phone)
-	// const finalSimStatus = simCard && simCard.simStatus !== status ? simCard.simStatus: status
-	//
-	// const createdAssignment = await executeQuery(client,
-	// 								`insert into assignment (
-	// 											owner_id,
-	// 											meter_type,
-	// 											meter_serial_number,
-	// 											meter_ip_address,
-	// 											meter_phone,
-	// 											meter_sim_status,
-	// 											customer_personal_account,
-	// 											customer_address,
-	// 											customer_contacts,
-	// 											last_data_date,
-	// 											created,
-	// 											status,
-	// 											meter_address,
-	// 											meter_port,
-	// 											meter_contact)
-	// 										values (
-	// 											${ authResult.id },
-	// 											${ type },
-	// 											'${ serialNumber }',
-	// 											${ ip_address },
-	// 											${ meterPhone },
-	// 											${ finalSimStatus },
-	// 											${ personalAccount },
-	// 											${ customerAddress },
-	// 											${ customerContacts },
-	// 											${ lastDataDateTime },
-	// 											'${ getCurrentDateTime() }',
-	// 											${ AssignmentStatus.REGISTERED },
-	// 											${ meterAddress },
-	// 											${ port },
-	// 											${ contact }
-	// 										) returning *`)
-	//
-	// return createdAssignment
 }
 
 async function createAssignment(client, meter, authResultId, simCardsUpdateData) {
@@ -713,6 +611,18 @@ async function createAssignment(client, meter, authResultId, simCardsUpdateData)
 	const simCard = simCardsUpdateData.find(({ simPhone }) => simPhone === phone)
 	const finalSimStatus = simCard && simCard.simStatus !== status ? simCard.simStatus: status
 	
+	let addressLat = 0, addressLng = 0
+	if (customerAddress) {
+		const { data } = await axios.get(encodeURI(
+			`https://maps.googleapis.com/maps/api/geocode/json?key=${ key }&address=${ 'Магнитогорск, ' + customerAddress }`))
+		
+		if (data && data.results && data.results.length && data.results[0].geometry) {
+			let { lat, lng } = data.results[0].geometry.location
+			addressLat = lat
+			addressLng = lng
+		}
+	}
+	
 	const createdAssignment = await executeQuery(client,
 		`insert into assignment (
 												owner_id,
@@ -729,7 +639,9 @@ async function createAssignment(client, meter, authResultId, simCardsUpdateData)
 												status,
 												meter_address,
 												meter_port,
-												meter_contact)
+												meter_contact,
+												lat,
+												lng)
 											values (
 												${ ownerId },
 												${ type },
@@ -745,7 +657,9 @@ async function createAssignment(client, meter, authResultId, simCardsUpdateData)
 												${ AssignmentStatus.REGISTERED },
 												${ meterAddress },
 												${ port },
-												${ contact }
+												${ contact },
+												'${ addressLat }',
+												'${ addressLng }'
 											) returning *`)
 	
 	return createdAssignment

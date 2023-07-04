@@ -109,7 +109,6 @@ module.exports = class acceptOrIssueApi {
 		})
 		
 		app.post(`/api/${ module_name }/edit`, async (apiReq, apiRes) => {
-			console.log(apiReq.body)
 			const { error } = _validateEditMeter(apiReq.body)
 			if (error) {
 				return apiRes.status(400).send(error.details[0].message)
@@ -169,7 +168,6 @@ module.exports = class acceptOrIssueApi {
 		})
 		
 		app.post(`/api/${ module_name }/create-accept-or-issue-log`, async (apiReq, apiRes) => {
-			console.log(apiReq.body)
 			const { error } = _validateCreateLog(apiReq.body)
 			if (error) {
 				return apiRes.status(400).send(error.details[0].message)
@@ -188,7 +186,7 @@ module.exports = class acceptOrIssueApi {
 				comment
 			} = apiReq.body
 			
-			console.log(operationType, newLocation, issuingPersonStaffId, acceptedPersonStaffId, comment)
+			//console.log(operationType, newLocation, issuingPersonStaffId, acceptedPersonStaffId, comment)
 			
 			const client = await pgPool.connect()
 			const results = []
@@ -228,7 +226,6 @@ module.exports = class acceptOrIssueApi {
 		})
 		
 		app.post(`/api/${ module_name }/delete`, async (apiReq, apiRes) => {
-			console.log(apiReq.body)
 			const { error } = _validateDeleteMeter(apiReq.body)
 			if (error)
 				return apiRes.status(400).send(error.details[0].message)

@@ -8,3 +8,4 @@ Dockerfile-dev
 /images/profile/
 keys.js
 host-url.js
+google-map.js

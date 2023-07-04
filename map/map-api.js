@@ -19,9 +19,9 @@ module.exports = class MapApi {
         //         for (const { id, address } of addresses) {
         //             //const address = 'Магнитогорск, ул. Жукова, д.14'
         //             console.log(`https://maps.googleapis.com/maps/api/geocode/
-        //                 json?key=AIzaSyASFSGeCXTbXvMVUssifgz8EKUVoCo4ot0&address=${ address }`)
+        //                 json?key=&address=${ address }`)
         //             const response = await get(
-        //                 encodeURI(`https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyASFSGeCXTbXvMVUssifgz8EKUVoCo4ot0&address=${ address }`))
+        //                 encodeURI(`https://maps.googleapis.com/maps/api/geocode/json?key=&address=${ address }`))
         //             //console.log(respAuth)
         //             //console.log(response)
         //             const { lat, lng } = response.data.results[0].geometry.location
